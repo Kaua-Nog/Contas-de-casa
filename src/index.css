@@ -1,0 +1,249 @@
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Space Grotesk", sans-serif;
+}
+
+:root {
+  --bg-app: #070c1e;               /* Deep Dark cosmic space slate index background */
+  --bg-card: #131a35;              /* Deep card celestial background */
+  --bg-input: #0e162d;             /* In-box/item slate background */
+  --bg-input-hover: #182142;       /* Hover state within dark widgets */
+  --border-card: #1d274c;          /* Border surrounding card containers */
+  --border-input: #263364;         /* Subtle border for form elements */
+  --text-main: #ffffff;            /* Maximum fidelity crisp headers */
+  --text-sub: #94a3b8;             /* Muted grey metadata */
+  --text-body: #cbd5e1;            /* Standard content paragraphs */
+  --bg-badge: rgba(99, 102, 241, 0.1); 
+  --text-inverse: #0f172a;
+  --color-alimentos: #38bdf8;
+  --color-bebidas: #c084fc;
+  --color-limpeza: #2dd4bf;
+  --color-higiene: #f472b6;
+  --color-outros: #94a3b8;
+}
+
+:root.light {
+  --bg-app: #f4f6fa;               /* Premium light neutral gray background */
+  --bg-card: #ffffff;              /* Crisp white containers */
+  --bg-input: #f8fafc;             /* Muted gray inside container borders */
+  --bg-input-hover: #f1f5f9;       /* Light selection highlight feedback */
+  --border-card: #e2e8f0;          /* Soft perimeter lines */
+  --border-input: #cbd5e1;         /* Readable input contours */
+  --text-main: #0f172a;            /* Dark state text for high readability */
+  --text-sub: #64748b;             /* Steel blue slate annotations */
+  --text-body: #334155;            /* Solid prose shade */
+  --bg-badge: rgba(79, 70, 229, 0.08);
+  --text-inverse: #ffffff;
+  --color-alimentos: #0284c7;      /* Darker Sky Blue */
+  --color-bebidas: #9333ea;         /* Darker Purple */
+  --color-limpeza: #0f766e;         /* Darker Teal */
+  --color-higiene: #db2777;         /* Darker Pink */
+  --color-outros: #64748b;          /* Darker Slate */
+}
+
+body {
+  background-color: var(--bg-app);
+  color: var(--text-body);
+  transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease;
+}
+
+/* Custom status badges styling with theme variations */
+.badge-nao-lancado {
+  background-color: rgba(148, 163, 184, 0.1);
+  color: #94a3b8;
+  border-color: rgba(148, 163, 184, 0.2);
+}
+:root.light .badge-nao-lancado {
+  background-color: #f1f5f9;
+  color: #64748b;
+  border-color: #cbd5e1;
+}
+
+.badge-pago {
+  background-color: rgba(16, 185, 129, 0.1);
+  color: #34d399;
+  border-color: rgba(16, 185, 129, 0.2);
+}
+:root.light .badge-pago {
+  background-color: #ecfdf5;
+  color: #059669;
+  border-color: #cbd5e1;
+}
+
+.badge-pendente {
+  background-color: rgba(245, 158, 11, 0.1);
+  color: #fbbf24;
+  border-color: rgba(245, 158, 11, 0.2);
+}
+:root.light .badge-pendente {
+  background-color: #fffbeb;
+  color: #d97706;
+  border-color: #cbd5e1;
+}
+
+/* Header Info Badges with Light Mode Contrast */
+.info-badge-indigo {
+  background-color: rgba(99, 102, 241, 0.15);
+  color: #a5b4fc;
+  border: 1px solid rgba(99, 102, 241, 0.2);
+}
+:root.light .info-badge-indigo {
+  background-color: #e0e7ff;
+  color: #3b82f6;
+  border: 1px solid #bfdbfe;
+}
+
+.info-badge-emerald {
+  background-color: rgba(16, 185, 129, 0.15);
+  color: #34d399;
+  border: 1px solid rgba(16, 185, 129, 0.2);
+}
+:root.light .info-badge-emerald {
+  background-color: #ecfdf5;
+  color: #059669;
+  border: 1px solid #a7f3d0;
+}
+
+/* Quick Add button suggestions badges with Light Mode Contrast */
+.quick-add-added {
+  background-color: rgba(99, 102, 241, 0.15);
+  border: 1px solid rgba(99, 102, 241, 0.2);
+  color: #a5b4fc;
+}
+:root.light .quick-add-added {
+  background-color: #e0e7ff;
+  border: 1px solid #c7d2fe;
+  color: #4f46e5;
+}
+
+.quick-add-num {
+  background-color: rgba(99, 102, 241, 0.3);
+  color: #c7d2fe;
+}
+:root.light .quick-add-num {
+  background-color: #c7d2fe;
+  color: #4338ca;
+}
+
+/* House Bill Category buttons manually with Light Mode Contrast */
+.cat-btn-agua {
+  background-color: rgba(59, 130, 246, 0.1);
+  color: #93c5fd;
+  border: 1px solid rgba(59, 130, 246, 0.15);
+}
+:root.light .cat-btn-agua {
+  background-color: #eff6ff;
+  color: #1d4ed8;
+  border: 1px solid #bfdbfe;
+}
+
+.cat-btn-energia {
+  background-color: rgba(245, 158, 11, 0.1);
+  color: #fde047;
+  border: 1px solid rgba(245, 158, 11, 0.15);
+}
+:root.light .cat-btn-energia {
+  background-color: #fefbeb;
+  color: #b45309;
+  border: 1px solid #fef08a;
+}
+
+.cat-btn-racao_gatos {
+  background-color: rgba(217, 70, 239, 0.1);
+  color: #f5d0fe;
+  border: 1px solid rgba(217, 70, 239, 0.15);
+}
+:root.light .cat-btn-racao_gatos {
+  background-color: #fdf4ff;
+  color: #a21caf;
+  border: 1px solid #f5d0fe;
+}
+
+.cat-btn-racao_cachorro {
+  background-color: rgba(249, 115, 22, 0.1);
+  color: #fdba74;
+  border: 1px solid rgba(249, 115, 22, 0.15);
+}
+:root.light .cat-btn-racao_cachorro {
+  background-color: #fff7ed;
+  color: #c2410c;
+  border: 1px solid #fed7aa;
+}
+
+.cat-btn-outros {
+  background-color: rgba(148, 163, 184, 0.1);
+  color: #cbd5e1;
+  border: 1px solid rgba(148, 163, 184, 0.15);
+}
+:root.light .cat-btn-outros {
+  background-color: #f1f5f9;
+  color: #475569;
+  border: 1px solid #cbd5e1;
+}
+
+/* Shopping List Item Categories Badges with Light Mode Contrast */
+.badge-cat-alimentos {
+  background-color: rgba(56, 189, 248, 0.1);
+  color: #38bdf8;
+  border: 1px solid rgba(56, 189, 248, 0.15);
+}
+:root.light .badge-cat-alimentos {
+  background-color: #f0f9ff;
+  color: #0369a1;
+  border: 1px solid #bae6fd;
+}
+
+.badge-cat-bebidas {
+  background-color: rgba(192, 132, 252, 0.1);
+  color: #c084fc;
+  border: 1px solid rgba(192, 132, 252, 0.15);
+}
+:root.light .badge-cat-bebidas {
+  background-color: #faf5ff;
+  color: #7e22ce;
+  border: 1px solid #e9d5ff;
+}
+
+.badge-cat-limpeza {
+  background-color: rgba(45, 212, 191, 0.1);
+  color: #2dd4bf;
+  border: 1px solid rgba(45, 212, 191, 0.15);
+}
+:root.light .badge-cat-limpeza {
+  background-color: #f0fdfa;
+  color: #0f766e;
+  border: 1px solid #99f6e4;
+}
+
+.badge-cat-higiene {
+  background-color: rgba(244, 114, 182, 0.1);
+  color: #f472b6;
+  border: 1px solid rgba(244, 114, 182, 0.15);
+}
+:root.light .badge-cat-higiene {
+  background-color: #fdf2f8;
+  color: #be185d;
+  border: 1px solid #fbcfe8;
+}
+
+.badge-cat-outros {
+  background-color: rgba(148, 163, 184, 0.1);
+  color: #94a3b8;
+  border: 1px solid rgba(148, 163, 184, 0.15);
+}
+:root.light .badge-cat-outros {
+  background-color: #f8fafc;
+  color: #475569;
+  border: 1px solid #cbd5e1;
+}
+
+.indicator-ping {
+  background-color: #818cf8;
+}
+:root.light .indicator-ping {
+  background-color: #3b82f6;
+}
+

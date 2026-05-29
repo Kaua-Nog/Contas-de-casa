@@ -1,0 +1,6 @@
+{
+  "name": "Lista de Compras e Contas",
+  "description": "Gerencie facilmente sua lista de compras de supermercado e o controle de contas mensais da casa, incluindo água, energia e ração dos pets, com gráficos de gastos.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

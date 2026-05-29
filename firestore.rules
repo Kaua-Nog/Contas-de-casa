@@ -1,0 +1,44 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Global Safety Net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Validation helpers
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function isValidShoppingItem(data) {
+      return data.id is string
+        && data.name is string && data.name.size() <= 100
+        && data.category is string && data.category.size() <= 50
+        && data.quantity is int && data.quantity >= 1
+        && data.checked is bool;
+    }
+
+    function isValidBill(data) {
+      return data.id is string
+        && data.type is string && (data.type == 'agua' || data.type == 'energia' || data.type == 'racao_gatos' || data.type == 'racao_cachorro' || data.type == 'outros')
+        && (!('customTitle' in data) || (data.customTitle is string && data.customTitle.size() <= 100))
+        && (data.value is number || data.value is int) && data.value >= 0
+        && data.month is string && data.month.size() == 7
+        && data.dueDate is string && data.dueDate.size() == 10
+        && data.paid is bool;
+    }
+
+    match /shopping_items/{itemId} {
+      allow read: if true;
+      allow create, update: if isValidId(itemId) && isValidShoppingItem(request.resource.data);
+      allow delete: if true;
+    }
+
+    match /bills/{billId} {
+      allow read: if true;
+      allow create, update: if isValidId(billId) && isValidBill(request.resource.data);
+      allow delete: if true;
+    }
+  }
+}

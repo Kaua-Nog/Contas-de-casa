@@ -1,0 +1,42 @@
+{
+  "entities": {
+    "ShoppingItem": {
+      "title": "ShoppingItem",
+      "description": "An item in the market shopping list representing household groceries",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Unique identifier for the shopping item" },
+        "name": { "type": "string", "description": "Name of the grocery item" },
+        "category": { "type": "string", "description": "Category of the grocery item" },
+        "quantity": { "type": "integer", "description": "Count/quantity of item to buy" },
+        "checked": { "type": "boolean", "description": "Whether the item has been put in the cart" }
+      },
+      "required": ["id", "name", "category", "quantity", "checked"]
+    },
+    "HouseBill": {
+      "title": "HouseBill",
+      "description": "A household utility or recurring service bill",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Unique identifier for the bill" },
+        "type": { "type": "string", "enum": ["agua", "energia", "racao_gatos", "racao_cachorro", "outros"], "description": "The category type of this bill" },
+        "customTitle": { "type": "string", "description": "Custom name if type is outros" },
+        "value": { "type": "number", "description": "Value in local currency" },
+        "month": { "type": "string", "description": "Target month in format YYYY-MM" },
+        "dueDate": { "type": "string", "description": "ISO format due date YYYY-MM-DD" },
+        "paid": { "type": "boolean", "description": "Whether the bill has been paid" }
+      },
+      "required": ["id", "type", "value", "month", "dueDate", "paid"]
+    }
+  },
+  "firestore": {
+    "shopping_items": {
+      "schema": "ShoppingItem",
+      "description": "Global user-independent list of grocer/market items needed"
+    },
+    "bills": {
+      "schema": "HouseBill",
+      "description": "Global user-independent list of household bills and utilities"
+    }
+  }
+}
