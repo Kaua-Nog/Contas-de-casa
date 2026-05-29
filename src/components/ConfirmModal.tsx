@@ -13,7 +13,7 @@ interface ConfirmModalProps {
   onCancel: () => void;
 }
 
-export default function ConfirmModal({
+const ConfirmModal = React.memo(function ConfirmModal({
   isOpen,
   title,
   description,
@@ -124,4 +124,6 @@ export default function ConfirmModal({
       )}
     </AnimatePresence>
   );
-}
+});
+
+export default ConfirmModal;

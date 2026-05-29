@@ -69,7 +69,7 @@ const CATEGORY_META = {
   }
 };
 
-export default function BillsTracker({
+const BillsTracker = React.memo(function BillsTracker({
   bills,
   selectedMonth,
   onMonthChange,
@@ -674,4 +674,6 @@ export default function BillsTracker({
       </div>
     </div>
   );
-}
+});
+
+export default BillsTracker;

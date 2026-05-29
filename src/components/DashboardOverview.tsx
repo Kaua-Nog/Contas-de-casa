@@ -20,7 +20,7 @@ interface DashboardOverviewProps {
   currentMonth: string;
 }
 
-export default function DashboardOverview({ bills, shoppingItems, currentMonth }: DashboardOverviewProps) {
+const DashboardOverview = React.memo(function DashboardOverview({ bills, shoppingItems, currentMonth }: DashboardOverviewProps) {
   // 1. Calculations optimized with useMemo & custom hook useShoppingStats
   const activeMonthBills = useMemo(() => bills.filter(b => b.month === currentMonth), [bills, currentMonth]);
   
@@ -191,4 +191,6 @@ export default function DashboardOverview({ bills, shoppingItems, currentMonth }
       </div>
     </div>
   );
-}
+});
+
+export default DashboardOverview;

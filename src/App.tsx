@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { ShoppingItem, HouseBill, BillType } from './types';
 import DashboardOverview from './components/DashboardOverview';
 import ShoppingList from './components/ShoppingList';
@@ -80,6 +80,16 @@ function getOffsetMonth(offset: number): string {
   const date = new Date();
   date.setMonth(date.getMonth() + offset);
   return `${date.getFullYear()}-${(date.getMonth() + 1).toString().padStart(2, '0')}`;
+}
+
+function getTypeName(type: BillType): string {
+  switch (type) {
+    case 'agua': return 'Água';
+    case 'energia': return 'Energia';
+    case 'racao_gatos': return 'Ração dos Gatos';
+    case 'racao_cachorro': return 'Ração do Cachorro';
+    default: return 'Outros';
+  }
 }
 
 export default function App() {
@@ -167,15 +177,15 @@ export default function App() {
     };
   }, []);
 
-  const showNotification = (msg: string) => {
+  const showNotification = useCallback((msg: string) => {
     setToastMessage(msg);
     setTimeout(() => {
       setToastMessage(null);
     }, 3000);
-  };
+  }, []);
 
   // 2. Shopping List Actions synced to Cloud Firestore
-  const handleAddShoppingItem = async (name: string, category: string, quantity: number, date?: string) => {
+  const handleAddShoppingItem = useCallback(async (name: string, category: string, quantity: number, date?: string) => {
     const itemId = `shop-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
     
     // Normalize category to standard title-case form
@@ -203,9 +213,9 @@ export default function App() {
       console.error(err);
       showNotification('Erro ao salvar item na Nuvem.');
     }
-  };
+  }, [showNotification]);
 
-  const handleToggleShoppingItem = async (id: string) => {
+  const handleToggleShoppingItem = useCallback(async (id: string) => {
     const target = shoppingItems.find(item => item.id === id);
     if (!target) return;
 
@@ -229,9 +239,9 @@ export default function App() {
       console.error(err);
       showNotification('Erro ao atualizar item na Nuvem.');
     }
-  };
+  }, [shoppingItems, showNotification]);
 
-  const handleUpdateQuantity = async (id: string, change: number) => {
+  const handleUpdateQuantity = useCallback(async (id: string, change: number) => {
     const target = shoppingItems.find(item => item.id === id);
     if (!target) return;
 
@@ -241,9 +251,9 @@ export default function App() {
     } catch (err) {
       console.error(err);
     }
-  };
+  }, [shoppingItems]);
 
-  const handleRemoveShoppingItem = (id: string) => {
+  const handleRemoveShoppingItem = useCallback((id: string) => {
     const target = shoppingItems.find(item => item.id === id);
     if (!target) return;
 
@@ -263,9 +273,9 @@ export default function App() {
         }
       }
     });
-  };
+  }, [shoppingItems, showNotification]);
 
-  const handleClearShoppingList = () => {
+  const handleClearShoppingList = useCallback(() => {
     const activeItems = shoppingItems.filter(item => !item.concluded);
     if (activeItems.length === 0) return;
     setConfirmModal({
@@ -284,9 +294,9 @@ export default function App() {
         }
       }
     });
-  };
+  }, [shoppingItems, showNotification]);
 
-  const handleMarkAllShopping = async (checked: boolean) => {
+  const handleMarkAllShopping = useCallback(async (checked: boolean) => {
     try {
       const activeItems = shoppingItems.filter(item => !item.concluded);
       const todayStr = new Date().toISOString().split('T')[0];
@@ -301,9 +311,9 @@ export default function App() {
       console.error(err);
       showNotification('Erro ao atualizar na Nuvem.');
     }
-  };
+  }, [shoppingItems, showNotification]);
 
-  const handleConcludePurchase = async () => {
+  const handleConcludePurchase = useCallback(async () => {
     const itemsInCart = shoppingItems.filter(item => !item.concluded && item.checked);
     if (itemsInCart.length === 0) {
       showNotification('Nenhum item no carrinho para concluir!');
@@ -333,10 +343,10 @@ export default function App() {
         }
       }
     });
-  };
+  }, [shoppingItems, showNotification]);
 
   // 3. Bills Tracker Actions synced to Cloud Firestore
-  const handleAddBill = async (type: BillType, value: number, dueDate: string, customTitle?: string, paid = false) => {
+  const handleAddBill = useCallback(async (type: BillType, value: number, dueDate: string, customTitle?: string, paid = false) => {
     const billMonth = dueDate.substring(0, 7); // "YYYY-MM"
     const billId = `bill-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
 
@@ -358,9 +368,9 @@ export default function App() {
       console.error(err);
       showNotification('Erro ao salvar conta na Nuvem.');
     }
-  };
+  }, [showNotification]);
 
-  const handleToggleBillStatus = async (id: string) => {
+  const handleToggleBillStatus = useCallback(async (id: string) => {
     const target = bills.find(bill => bill.id === id);
     if (!target) return;
 
@@ -372,9 +382,9 @@ export default function App() {
     } catch (err) {
       console.error(err);
     }
-  };
+  }, [bills, showNotification]);
 
-  const handleRemoveBill = (id: string) => {
+  const handleRemoveBill = useCallback((id: string) => {
     const target = bills.find(b => b.id === id);
     if (!target) return;
     const label = target.type === 'outros' && target.customTitle ? target.customTitle : getTypeName(target.type);
@@ -395,17 +405,7 @@ export default function App() {
         }
       }
     });
-  };
-
-  const getTypeName = (type: BillType): string => {
-    switch (type) {
-      case 'agua': return 'Água';
-      case 'energia': return 'Energia';
-      case 'racao_gatos': return 'Ração dos Gatos';
-      case 'racao_cachorro': return 'Ração do Cachorro';
-      default: return 'Outros';
-    }
-  };
+  }, [bills, showNotification]);
 
   const resetAllToDefaults = () => {
     setConfirmModal({

@@ -11,9 +11,12 @@ import {
   Search, 
   CheckSquare, 
   Square,
-  DollarSign
+  DollarSign,
+  Layers
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { doc, writeBatch, updateDoc } from 'firebase/firestore';
+import { db } from '../firebase';
 
 interface ShoppingListProps {
   items: ShoppingItem[];
@@ -50,7 +53,7 @@ const SUGGESTIONS = [
   { name: 'Creme Dental', category: 'Higiene' },
 ];
 
-export default function ShoppingList({
+const ShoppingList = React.memo(function ShoppingList({
   items,
   currentMonth,
   onAddItem,
@@ -65,6 +68,83 @@ export default function ShoppingList({
   const [selectedCategory, setSelectedCategory] = useState('Alimentos');
   const [searchFilter, setSearchFilter] = useState('');
   const [activeTab, setActiveTab] = useState<'all' | 'pending' | 'checked'>('all');
+  const [isGrouped, setIsGrouped] = useState(false);
+
+  // Expanded Item State (Accordion Click on Name)
+  const [expandedItemId, setExpandedItemId] = useState<string | null>(null);
+
+  // Batch Mode States
+  const [batchMode, setBatchMode] = useState(false);
+  const [selectedItemIds, setSelectedItemIds] = useState<string[]>([]);
+  const [showBatchDeleteConfirm, setShowBatchDeleteConfirm] = useState(false);
+
+  const toggleExpand = (id: string) => {
+    setExpandedItemId(prev => prev === id ? null : id);
+  };
+
+  // Inline Item Editing States
+  const [editingItemId, setEditingItemId] = useState<string | null>(null);
+  const [editNameText, setEditNameText] = useState('');
+
+  const startEditing = (id: string, currentName: string) => {
+    setEditingItemId(id);
+    setEditNameText(currentName);
+  };
+
+  const saveItemName = async (id: string) => {
+    if (!editNameText.trim()) {
+      cancelEditing();
+      return;
+    }
+    try {
+      const itemRef = doc(db, 'shopping_items', id);
+      await updateDoc(itemRef, { name: editNameText.trim() });
+      setEditingItemId(null);
+    } catch (error) {
+      console.error("Erro ao atualizar nome do item", error);
+    }
+  };
+
+  const cancelEditing = () => {
+    setEditingItemId(null);
+  };
+
+  const handleBatchToggleChecked = async (checkedState: boolean) => {
+    if (selectedItemIds.length === 0) return;
+    try {
+      const batch = writeBatch(db);
+      const todayStr = new Date().toISOString().split('T')[0];
+      selectedItemIds.forEach(id => {
+        const itemRef = doc(db, 'shopping_items', id);
+        batch.update(itemRef, {
+          checked: checkedState,
+          date: checkedState ? todayStr : ''
+        });
+      });
+      await batch.commit();
+      setSelectedItemIds([]);
+      setBatchMode(false);
+    } catch (error) {
+      console.error("Erro ao atualizar lote", error);
+    }
+  };
+
+  const handleBatchDelete = async () => {
+    if (selectedItemIds.length === 0) return;
+    try {
+      const batch = writeBatch(db);
+      selectedItemIds.forEach(id => {
+        const itemRef = doc(db, 'shopping_items', id);
+        batch.delete(itemRef);
+      });
+      await batch.commit();
+      setSelectedItemIds([]);
+      setBatchMode(false);
+      setShowBatchDeleteConfirm(false);
+    } catch (error) {
+      console.error("Erro ao deletar lote", error);
+    }
+  };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -99,7 +179,7 @@ export default function ShoppingList({
   }, [items, searchFilter, activeTab]);
 
   return (
-    <div className="bg-[var(--bg-card)] rounded-3xl border border-[var(--border-card)] shadow-sm overflow-hidden h-full flex flex-col transition-colors duration-205" id="shopping-list-card">
+    <div className="bg-[var(--bg-card)] rounded-3xl border border-[var(--border-card)] shadow-sm hover:shadow-[0_0_25px_rgba(99,102,241,0.12)] hover:border-indigo-500/30 overflow-hidden h-full flex flex-col transition-all duration-300 hover:scale-[1.002]" id="shopping-list-card">
       {/* Header section */}
       <div className="p-6 border-b border-[var(--border-card)] bg-[var(--bg-card)]" id="shopping-list-header">
         <div className="flex items-center justify-between mb-4">
@@ -196,39 +276,161 @@ export default function ShoppingList({
           />
         </div>
 
-        <div className="flex items-center gap-1.5 bg-[var(--bg-input)] p-1 rounded-xl">
+        <div className="flex flex-wrap items-center gap-2">
+          {/* Lote Toggle Button */}
           <button
-            onClick={() => setActiveTab('all')}
-            className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all cursor-pointer ${
-              activeTab === 'all' 
-                ? 'bg-[var(--bg-input-hover)] text-[var(--text-main)] shadow-xs' 
-                : 'text-[var(--text-sub)] hover:text-[var(--text-body)] hover:bg-[var(--bg-input-hover)]/40'
+            type="button"
+            onClick={() => {
+              setBatchMode(prev => !prev);
+              setSelectedItemIds([]);
+              setShowBatchDeleteConfirm(false);
+            }}
+            className={`px-3 py-1.5 text-xs font-bold rounded-xl border transition-all flex items-center gap-1.5 cursor-pointer ${
+              batchMode 
+                ? 'bg-amber-500/10 text-amber-400 border-amber-500/30 hover:bg-amber-500/20'
+                : 'bg-[var(--bg-input)] text-[var(--text-sub)] border-[var(--border-input)] hover:text-[var(--text-main)] hover:border-slate-500'
             }`}
+            title="Ativar/Desativar seleção em lote"
           >
-            Todos
+            <CheckSquare size={13} />
+            <span>{batchMode ? 'Sair do Lote' : 'Seleção em Lote'}</span>
           </button>
+
+          {/* Grouping Toggle Button */}
           <button
-            onClick={() => setActiveTab('pending')}
-            className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all cursor-pointer ${
-              activeTab === 'pending' 
-                ? 'bg-amber-500 text-white shadow-xs' 
-                : 'text-[var(--text-sub)] hover:text-[var(--text-body)] hover:bg-[var(--bg-input-hover)]/40'
+            type="button"
+            onClick={() => setIsGrouped(prev => !prev)}
+            className={`px-3 py-1.5 text-xs font-bold rounded-xl border transition-all flex items-center gap-1.5 cursor-pointer ${
+              isGrouped 
+                ? 'bg-indigo-600/10 text-indigo-400 border-indigo-500/30 hover:bg-indigo-600/20'
+                : 'bg-[var(--bg-input)] text-[var(--text-sub)] border-[var(--border-input)] hover:text-[var(--text-main)] hover:border-slate-500'
             }`}
+            title="Agrupar itens por categoria"
+            id="shopping-group-btn"
           >
-            Faltando
+            <Layers size={13} />
+            <span>{isGrouped ? 'Lista Plana' : 'Agrupar por Categoria'}</span>
           </button>
-          <button
-            onClick={() => setActiveTab('checked')}
-            className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all cursor-pointer ${
-              activeTab === 'checked' 
-                ? 'bg-emerald-600 text-white shadow-xs' 
-                : 'text-[var(--text-sub)] hover:text-[var(--text-body)] hover:bg-[var(--bg-input-hover)]/40'
-            }`}
-          >
-            No Carrinho
-          </button>
+
+          <div className="flex items-center gap-1.5 bg-[var(--bg-input)] p-1 rounded-xl">
+            <button
+              onClick={() => setActiveTab('all')}
+              className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all cursor-pointer ${
+                activeTab === 'all' 
+                  ? 'bg-[var(--bg-input-hover)] text-[var(--text-main)] shadow-xs' 
+                  : 'text-[var(--text-sub)] hover:text-[var(--text-body)] hover:bg-[var(--bg-input-hover)]/40'
+              }`}
+            >
+              Todos
+            </button>
+            <button
+              onClick={() => setActiveTab('pending')}
+              className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all cursor-pointer ${
+                activeTab === 'pending' 
+                  ? 'bg-amber-500 text-white shadow-xs' 
+                  : 'text-[var(--text-sub)] hover:text-[var(--text-body)] hover:bg-[var(--bg-input-hover)]/40'
+              }`}
+            >
+              Faltando
+            </button>
+            <button
+              onClick={() => setActiveTab('checked')}
+              className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all cursor-pointer ${
+                activeTab === 'checked' 
+                  ? 'bg-emerald-600 text-white shadow-xs' 
+                  : 'text-[var(--text-sub)] hover:text-[var(--text-body)] hover:bg-[var(--bg-input-hover)]/40'
+              }`}
+            >
+              No Carrinho
+            </button>
+          </div>
         </div>
       </div>
+
+      {/* Batch toolbar */}
+      <AnimatePresence>
+        {batchMode && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            className="px-6 py-3 border-b border-amber-500/10 bg-amber-500/5 flex flex-wrap items-center justify-between gap-3 overflow-hidden"
+            id="shopping-batch-actions-bar"
+          >
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-bold text-amber-500 font-mono">
+                {selectedItemIds.length} selecionado(s)
+              </span>
+              <button
+                type="button"
+                onClick={() => {
+                  const allVisibleIds = filteredItems.map(i => i.id);
+                  const isAllSelected = allVisibleIds.length > 0 && allVisibleIds.every(id => selectedItemIds.includes(id));
+                  if (isAllSelected) {
+                    setSelectedItemIds([]);
+                  } else {
+                    setSelectedItemIds(allVisibleIds);
+                  }
+                }}
+                className="text-[11px] font-bold text-indigo-400 hover:text-indigo-300 transition-colors cursor-pointer underline underline-offset-2 bg-transparent border-0 p-0"
+              >
+                {filteredItems.length > 0 && filteredItems.every(item => selectedItemIds.includes(item.id)) ? "Desmarcar Todos" : "Selecionar Todos"}
+              </button>
+            </div>
+
+            <div className="flex items-center gap-2">
+              {!showBatchDeleteConfirm ? (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => handleBatchToggleChecked(true)}
+                    disabled={selectedItemIds.length === 0}
+                    className="px-3 py-1.5 text-[11px] font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg transition-all cursor-pointer disabled:opacity-40"
+                  >
+                    No Carrinho
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleBatchToggleChecked(false)}
+                    disabled={selectedItemIds.length === 0}
+                    className="px-3 py-1.5 text-[11px] font-bold text-[var(--text-body)] bg-[var(--bg-input)] border border-[var(--border-input)] hover:bg-[var(--bg-input-hover)] rounded-lg transition-all cursor-pointer disabled:opacity-40"
+                  >
+                    Pendente
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setShowBatchDeleteConfirm(true)}
+                    disabled={selectedItemIds.length === 0}
+                    className="px-3 py-1.5 text-[11px] font-bold text-white bg-red-650 hover:bg-red-700 rounded-lg transition-all cursor-pointer disabled:opacity-40 flex items-center gap-1"
+                  >
+                    <Trash2 size={11} />
+                    <span>Excluir</span>
+                  </button>
+                </>
+              ) : (
+                <div className="flex items-center gap-2 bg-red-950/20 px-2.5 py-1 rounded-lg border border-red-500/20">
+                  <span className="text-[11px] font-bold text-red-400">Excluir {selectedItemIds.length} item(ns)?</span>
+                  <button
+                    type="button"
+                    onClick={handleBatchDelete}
+                    className="text-[11px] font-extrabold text-red-500 hover:text-red-400 cursor-pointer underline bg-transparent border-0 p-0"
+                  >
+                    Sim
+                  </button>
+                  <span className="text-[11px] text-zinc-500">|</span>
+                  <button
+                    type="button"
+                    onClick={() => setShowBatchDeleteConfirm(false)}
+                    className="text-[11px] font-bold text-zinc-400 hover:text-zinc-300 cursor-pointer underline bg-transparent border-0 p-0"
+                  >
+                    Não
+                  </button>
+                </div>
+              )}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Main Items Listing */}
       <div className="flex-1 overflow-y-auto p-6 min-h-[250px] max-h-[420px]" id="shopping-items-list">
@@ -239,100 +441,358 @@ export default function ShoppingList({
             <p className="text-xs text-slate-400">Adicione novos itens no campo acima</p>
           </div>
         ) : (
-          <div className="space-y-2">
-            <AnimatePresence initial={false}>
-              {filteredItems.map(item => {
-                const categoryConfig = CATEGORIES.find(c => c.id.toLowerCase() === (item.category || '').trim().toLowerCase()) || CATEGORIES[4];
+          <div className="space-y-4">
+            {isGrouped ? (
+              CATEGORIES.map(cat => {
+                const catItems = filteredItems.filter(item => {
+                  const itemCat = (item.category || '').trim().toLowerCase();
+                  if (cat.id.toLowerCase() === 'outros') {
+                    const knownCatIds = CATEGORIES.slice(0, 4).map(c => c.id.toLowerCase());
+                    return itemCat === 'outros' || !knownCatIds.includes(itemCat);
+                  }
+                  return itemCat === cat.id.toLowerCase();
+                });
+                if (catItems.length === 0) return null;
                 return (
-                  <motion.div
-                    key={item.id}
-                    layoutId={`shopping-${item.id}`}
-                    initial={{ opacity: 0, y: 5 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, x: -10 }}
-                    transition={{ duration: 0.15 }}
-                    className={`flex items-center justify-between p-3 rounded-xl border transition-all ${
-                      item.checked 
-                        ? 'bg-[var(--bg-input)]/20 border-[var(--border-card)]/50 opacity-60' 
-                        : 'bg-[var(--bg-input)] border-[var(--border-input)] shadow-2xs hover:border-slate-650'
-                    }`}
-                  >
-                    <div className="flex items-center gap-3 flex-1 min-w-0">
-                      {/* Check button icon */}
-                      <button
-                        type="button"
-                        onClick={() => onToggleItem(item.id)}
-                        className={`flex-shrink-0 w-5 h-5 rounded-md border flex items-center justify-center transition-colors cursor-pointer ${
+                  <div key={cat.id} className="space-y-2 first:mt-0 mt-4">
+                    <div className="flex items-center gap-2 px-1 py-1 bg-[var(--bg-card)] sticky top-0 z-10">
+                      <span className="text-[10px] uppercase font-mono font-bold text-indigo-400 tracking-wider">
+                        {cat.label}
+                      </span>
+                      <span className="text-[9px] bg-indigo-500/10 text-indigo-400 px-1.5 py-0.5 rounded-full font-bold">
+                        {catItems.length}
+                      </span>
+                      <div className="flex-1 h-px bg-[var(--border-card)]" />
+                    </div>
+                    <div className="space-y-2">
+                      <AnimatePresence initial={false}>
+                        {catItems.map(item => {
+                          const categoryConfig = CATEGORIES.find(c => c.id.toLowerCase() === (item.category || '').trim().toLowerCase()) || CATEGORIES[4];
+                          return (
+                            <motion.div
+                              key={item.id}
+                              layoutId={`shopping-${item.id}`}
+                              initial={{ opacity: 0, y: 5 }}
+                              animate={{ opacity: 1, y: 0 }}
+                              exit={{ opacity: 0, x: -10 }}
+                              transition={{ duration: 0.15 }}
+                              className={`flex items-center justify-between p-3 rounded-xl border transition-all ${
+                                item.checked 
+                                  ? 'bg-[var(--bg-input)]/20 border-[var(--border-card)]/50 opacity-60' 
+                                  : 'bg-[var(--bg-input)] border-[var(--border-input)] shadow-2xs hover:border-slate-650'
+                              }`}
+                            >
+                              <div className="flex items-center gap-3 flex-1 min-w-0">
+                                {/* Batch Selection Checkbox */}
+                                {batchMode && (
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setSelectedItemIds(prev => {
+                                        if (prev.includes(item.id)) {
+                                          return prev.filter(id => id !== item.id);
+                                        } else {
+                                          return [...prev, item.id];
+                                        }
+                                      });
+                                    }}
+                                    className={`mr-0.5 flex-shrink-0 w-5 h-5 rounded-md border flex items-center justify-center transition-colors cursor-pointer ${
+                                      selectedItemIds.includes(item.id)
+                                        ? 'bg-amber-500 border-amber-500 text-white shadow-xs'
+                                        : 'border-amber-500/40 hover:border-amber-500 bg-[var(--bg-card)]'
+                                    }`}
+                                  >
+                                    <div className={`w-2 h-2 rounded-xs bg-white transition-all transform ${selectedItemIds.includes(item.id) ? 'scale-100 rotate-0' : 'scale-0 rotate-45'}`} />
+                                  </button>
+                                )}
+
+                                {/* Check button icon */}
+                                <button
+                                  type="button"
+                                  onClick={() => onToggleItem(item.id)}
+                                  className={`flex-shrink-0 w-5 h-5 rounded-md border flex items-center justify-center transition-colors cursor-pointer ${
+                                    item.checked 
+                                      ? 'bg-indigo-600 border-indigo-600 text-white' 
+                                      : 'border-[var(--border-input)] hover:border-indigo-500 text-transparent hover:text-indigo-200 bg-[var(--bg-card)]'
+                                  }`}
+                                >
+                                  <Check size={12} strokeWidth={3} className={item.checked ? 'block' : 'opacity-0 hover:opacity-100 text-indigo-400'} />
+                                </button>
+
+                                <div className="min-w-0 pr-2 flex-1">
+                                  {editingItemId === item.id ? (
+                                    <form
+                                      onSubmit={(e) => {
+                                        e.preventDefault();
+                                        saveItemName(item.id);
+                                      }}
+                                      onClick={(e) => e.stopPropagation()}
+                                      className="w-full py-0.5"
+                                    >
+                                      <input
+                                        type="text"
+                                        value={editNameText}
+                                        onChange={(e) => setEditNameText(e.target.value)}
+                                        onBlur={() => saveItemName(item.id)}
+                                        onKeyDown={(e) => {
+                                          if (e.key === 'Escape') cancelEditing();
+                                        }}
+                                        className="w-full bg-[var(--bg-input-hover)] text-[var(--text-main)] text-sm font-semibold px-2 py-1 border border-indigo-500 rounded-md focus:outline-none"
+                                        autoFocus
+                                      />
+                                    </form>
+                                  ) : (
+                                    <button
+                                      type="button"
+                                      onClick={() => toggleExpand(item.id)}
+                                      onDoubleClick={() => startEditing(item.id, item.name)}
+                                      className="text-left w-full focus:outline-hidden group/itemname cursor-pointer py-0.5"
+                                      title="Dois cliques para editar nome, um clique para ver ou ocultar detalhes"
+                                    >
+                                      <span className={`text-sm font-semibold break-words inline-flex items-center gap-1.5 transition-colors ${item.checked ? 'line-through text-[var(--text-sub)]' : 'text-[var(--text-body)] hover:text-indigo-400'}`}>
+                                        <span>{item.name}</span>
+                                        <span className="text-[9px] text-indigo-400/65 font-bold">
+                                          {expandedItemId === item.id ? '▲' : '▼'}
+                                        </span>
+                                      </span>
+                                    </button>
+                                  )}
+                                  
+                                  <AnimatePresence initial={false}>
+                                    {expandedItemId === item.id && (
+                                      <motion.div
+                                        initial={{ height: 0, opacity: 0 }}
+                                        animate={{ height: 'auto', opacity: 1 }}
+                                        exit={{ height: 0, opacity: 0 }}
+                                        className="overflow-hidden mt-1.5 flex flex-wrap items-center gap-1.5"
+                                      >
+                                        <span className={`text-[10px] px-1.5 py-0.5 rounded-sm font-medium ${categoryConfig.color}`}>
+                                          {categoryConfig.label}
+                                        </span>
+                                        {item.date && (
+                                          <span className="text-[9px] text-[var(--text-sub)]/80 font-mono font-semibold flex items-center gap-0.5 bg-[var(--bg-card)] px-1.5 py-0.5 rounded-xs border border-[var(--border-card)]">
+                                            🗓️ {(() => {
+                                              try {
+                                                const [year, month, day] = item.date.split('-');
+                                                return `${day}/${month}/${year}`;
+                                              } catch {
+                                                return item.date;
+                                              }
+                                            })()}
+                                          </span>
+                                        )}
+                                      </motion.div>
+                                    )}
+                                  </AnimatePresence>
+                                </div>
+                              </div>
+
+                              {/* Quantity controls & Delete */}
+                              <div className="flex items-center gap-3">
+                                {/* Quantity counters */}
+                                <div className="flex items-center border border-[var(--border-input)] rounded-lg p-0.5 bg-[var(--bg-card)]">
+                                  <button
+                                    type="button"
+                                    onClick={() => onUpdateQuantity(item.id, -1)}
+                                    className="p-1 text-[var(--text-sub)] hover:text-[var(--text-main)] rounded-md hover:bg-[var(--bg-input)] active:bg-[var(--bg-input)] transition-colors disabled:opacity-40 cursor-pointer"
+                                    disabled={item.quantity <= 1}
+                                  >
+                                    <Minus size={11} strokeWidth={2.5} />
+                                  </button>
+                                  <span className="px-2 text-xs font-mono font-bold text-[var(--text-body)] select-none min-w-5 text-center">
+                                    {item.quantity}
+                                  </span>
+                                  <button
+                                    type="button"
+                                    onClick={() => onUpdateQuantity(item.id, 1)}
+                                    className="p-1 text-[var(--text-sub)] hover:text-[var(--text-main)] rounded-md hover:bg-[var(--bg-input)] active:bg-[var(--bg-input)] transition-colors cursor-pointer"
+                                  >
+                                    <Plus size={11} strokeWidth={2.5} />
+                                  </button>
+                                </div>
+
+                                {/* Remove item button */}
+                                <button
+                                  type="button"
+                                  onClick={() => onRemoveItem(item.id)}
+                                  className="p-1.5 text-slate-450 hover:text-red-400 hover:bg-red-500/10 rounded-md transition-colors cursor-pointer"
+                                  title="Excluir item"
+                                >
+                                  <Trash2 size={13} />
+                                </button>
+                              </div>
+                            </motion.div>
+                          );
+                        })}
+                      </AnimatePresence>
+                    </div>
+                  </div>
+                );
+              })
+            ) : (
+              <div className="space-y-2">
+                <AnimatePresence initial={false}>
+                  {filteredItems.map(item => {
+                    const categoryConfig = CATEGORIES.find(c => c.id.toLowerCase() === (item.category || '').trim().toLowerCase()) || CATEGORIES[4];
+                    return (
+                      <motion.div
+                        key={item.id}
+                        layoutId={`shopping-${item.id}`}
+                        initial={{ opacity: 0, y: 5 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, x: -10 }}
+                        transition={{ duration: 0.15 }}
+                        className={`flex items-center justify-between p-3 rounded-xl border transition-all ${
                           item.checked 
-                            ? 'bg-indigo-600 border-indigo-600 text-white' 
-                            : 'border-[var(--border-input)] hover:border-indigo-500 text-transparent hover:text-indigo-200 bg-[var(--bg-card)]'
+                            ? 'bg-[var(--bg-input)]/20 border-[var(--border-card)]/50 opacity-60' 
+                            : 'bg-[var(--bg-input)] border-[var(--border-input)] shadow-2xs hover:border-slate-650'
                         }`}
                       >
-                        <Check size={12} strokeWidth={3} className={item.checked ? 'block' : 'opacity-0 hover:opacity-100 text-indigo-400'} />
-                      </button>
-
-                      <div className="min-w-0 pr-2">
-                        <span className={`text-sm font-semibold break-words block ${item.checked ? 'line-through text-[var(--text-sub)]' : 'text-[var(--text-body)]'}`}>
-                          {item.name}
-                        </span>
-                        <div className="flex flex-wrap items-center gap-1.5 mt-1">
-                          <span className={`text-[10px] px-1.5 py-0.5 rounded-sm font-medium ${categoryConfig.color}`}>
-                            {categoryConfig.label}
-                          </span>
-                          {item.date && (
-                            <span className="text-[9px] text-[var(--text-sub)]/80 font-mono font-semibold flex items-center gap-0.5 bg-[var(--bg-card)] px-1.5 py-0.5 rounded-xs border border-[var(--border-card)]">
-                              🗓️ {(() => {
-                                try {
-                                  const [year, month, day] = item.date.split('-');
-                                  return `${day}/${month}/${year}`;
-                                } catch {
-                                  return item.date;
-                                }
-                              })()}
-                            </span>
+                        <div className="flex items-center gap-3 flex-1 min-w-0">
+                          {/* Batch Selection Checkbox */}
+                          {batchMode && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setSelectedItemIds(prev => {
+                                  if (prev.includes(item.id)) {
+                                    return prev.filter(id => id !== item.id);
+                                  } else {
+                                    return [...prev, item.id];
+                                  }
+                                });
+                              }}
+                              className={`mr-0.5 flex-shrink-0 w-5 h-5 rounded-md border flex items-center justify-center transition-colors cursor-pointer ${
+                                selectedItemIds.includes(item.id)
+                                  ? 'bg-amber-500 border-amber-500 text-white shadow-xs'
+                                  : 'border-amber-500/40 hover:border-amber-500 bg-[var(--bg-card)]'
+                              }`}
+                            >
+                              <div className={`w-2 h-2 rounded-xs bg-white transition-all transform ${selectedItemIds.includes(item.id) ? 'scale-100 rotate-0' : 'scale-0 rotate-45'}`} />
+                            </button>
                           )}
+
+                          {/* Check button icon */}
+                          <button
+                            type="button"
+                            onClick={() => onToggleItem(item.id)}
+                            className={`flex-shrink-0 w-5 h-5 rounded-md border flex items-center justify-center transition-colors cursor-pointer ${
+                              item.checked 
+                                ? 'bg-indigo-600 border-indigo-600 text-white' 
+                                : 'border-[var(--border-input)] hover:border-indigo-500 text-transparent hover:text-indigo-200 bg-[var(--bg-card)]'
+                            }`}
+                          >
+                            <Check size={12} strokeWidth={3} className={item.checked ? 'block' : 'opacity-0 hover:opacity-100 text-indigo-400'} />
+                          </button>
+
+                          <div className="min-w-0 pr-2 flex-1">
+                            {editingItemId === item.id ? (
+                              <form
+                                onSubmit={(e) => {
+                                  e.preventDefault();
+                                  saveItemName(item.id);
+                                }}
+                                onClick={(e) => e.stopPropagation()}
+                                className="w-full py-0.5"
+                              >
+                                <input
+                                  type="text"
+                                  value={editNameText}
+                                  onChange={(e) => setEditNameText(e.target.value)}
+                                  onBlur={() => saveItemName(item.id)}
+                                  onKeyDown={(e) => {
+                                    if (e.key === 'Escape') cancelEditing();
+                                  }}
+                                  className="w-full bg-[var(--bg-input-hover)] text-[var(--text-main)] text-sm font-semibold px-2 py-1 border border-indigo-500 rounded-md focus:outline-none"
+                                  autoFocus
+                                />
+                              </form>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => toggleExpand(item.id)}
+                                onDoubleClick={() => startEditing(item.id, item.name)}
+                                className="text-left w-full focus:outline-hidden group/itemname cursor-pointer py-0.5"
+                                title="Dois cliques para editar nome, um clique para ver ou ocultar detalhes"
+                              >
+                                <span className={`text-sm font-semibold break-words inline-flex items-center gap-1.5 transition-colors ${item.checked ? 'line-through text-[var(--text-sub)]' : 'text-[var(--text-body)] hover:text-indigo-400'}`}>
+                                  <span>{item.name}</span>
+                                  <span className="text-[9px] text-indigo-400/65 font-bold">
+                                    {expandedItemId === item.id ? '▲' : '▼'}
+                                  </span>
+                                </span>
+                              </button>
+                            )}
+                            
+                            <AnimatePresence initial={false}>
+                              {expandedItemId === item.id && (
+                                <motion.div
+                                  initial={{ height: 0, opacity: 0 }}
+                                  animate={{ height: 'auto', opacity: 1 }}
+                                  exit={{ height: 0, opacity: 0 }}
+                                  className="overflow-hidden mt-1.5 flex flex-wrap items-center gap-1.5"
+                                >
+                                  <span className={`text-[10px] px-1.5 py-0.5 rounded-sm font-medium ${categoryConfig.color}`}>
+                                    {categoryConfig.label}
+                                  </span>
+                                  {item.date && (
+                                    <span className="text-[9px] text-[var(--text-sub)]/80 font-mono font-semibold flex items-center gap-0.5 bg-[var(--bg-card)] px-1.5 py-0.5 rounded-xs border border-[var(--border-card)]">
+                                      🗓️ {(() => {
+                                        try {
+                                          const [year, month, day] = item.date.split('-');
+                                          return `${day}/${month}/${year}`;
+                                        } catch {
+                                          return item.date;
+                                        }
+                                      })()}
+                                    </span>
+                                  )}
+                                </motion.div>
+                              )}
+                            </AnimatePresence>
+                          </div>
                         </div>
-                      </div>
-                    </div>
 
-                    {/* Quantity controls & Delete */}
-                    <div className="flex items-center gap-3">
-                      {/* Quantity counters */}
-                      <div className="flex items-center border border-[var(--border-input)] rounded-lg p-0.5 bg-[var(--bg-card)]">
-                        <button
-                          type="button"
-                          onClick={() => onUpdateQuantity(item.id, -1)}
-                          className="p-1 text-[var(--text-sub)] hover:text-[var(--text-main)] rounded-md hover:bg-[var(--bg-input)] active:bg-[var(--bg-input)] transition-colors disabled:opacity-40 cursor-pointer"
-                          disabled={item.quantity <= 1}
-                        >
-                          <Minus size={11} strokeWidth={2.5} />
-                        </button>
-                        <span className="px-2 text-xs font-mono font-bold text-[var(--text-body)] select-none min-w-5 text-center">
-                          {item.quantity}
-                        </span>
-                        <button
-                          type="button"
-                          onClick={() => onUpdateQuantity(item.id, 1)}
-                          className="p-1 text-[var(--text-sub)] hover:text-[var(--text-main)] rounded-md hover:bg-[var(--bg-input)] active:bg-[var(--bg-input)] transition-colors cursor-pointer"
-                        >
-                          <Plus size={11} strokeWidth={2.5} />
-                        </button>
-                      </div>
+                        {/* Quantity controls & Delete */}
+                        <div className="flex items-center gap-3">
+                          {/* Quantity counters */}
+                          <div className="flex items-center border border-[var(--border-input)] rounded-lg p-0.5 bg-[var(--bg-card)]">
+                            <button
+                              type="button"
+                              onClick={() => onUpdateQuantity(item.id, -1)}
+                              className="p-1 text-[var(--text-sub)] hover:text-[var(--text-main)] rounded-md hover:bg-[var(--bg-input)] active:bg-[var(--bg-input)] transition-colors disabled:opacity-40 cursor-pointer"
+                              disabled={item.quantity <= 1}
+                            >
+                              <Minus size={11} strokeWidth={2.5} />
+                            </button>
+                            <span className="px-2 text-xs font-mono font-bold text-[var(--text-body)] select-none min-w-5 text-center">
+                              {item.quantity}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => onUpdateQuantity(item.id, 1)}
+                              className="p-1 text-[var(--text-sub)] hover:text-[var(--text-main)] rounded-md hover:bg-[var(--bg-input)] active:bg-[var(--bg-input)] transition-colors cursor-pointer"
+                            >
+                              <Plus size={11} strokeWidth={2.5} />
+                            </button>
+                          </div>
 
-                      {/* Remove item button */}
-                      <button
-                        type="button"
-                        onClick={() => onRemoveItem(item.id)}
-                        className="p-1.5 text-slate-450 hover:text-red-400 hover:bg-red-500/10 rounded-md transition-colors cursor-pointer"
-                        title="Excluir item"
-                      >
-                        <Trash2 size={13} />
-                      </button>
-                    </div>
-                  </motion.div>
-                );
-              })}
-            </AnimatePresence>
+                          {/* Remove item button */}
+                          <button
+                            type="button"
+                            onClick={() => onRemoveItem(item.id)}
+                            className="p-1.5 text-slate-450 hover:text-red-400 hover:bg-red-500/10 rounded-md transition-colors cursor-pointer"
+                            title="Excluir item"
+                          >
+                            <Trash2 size={13} />
+                          </button>
+                        </div>
+                      </motion.div>
+                    );
+                  })}
+                </AnimatePresence>
+              </div>
+            )}
             
             {/* Action card with "Concluir Compra" at the end of checked list */}
             {activeTab === 'checked' && filteredItems.length > 0 && (
@@ -398,4 +858,6 @@ export default function ShoppingList({
       </div>
     </div>
   );
-}
+});
+
+export default ShoppingList;
