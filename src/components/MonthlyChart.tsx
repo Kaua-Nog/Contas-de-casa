@@ -37,6 +37,7 @@ const MonthlyChart = React.memo(function MonthlyChart({ bills, currentMonth, sho
     return d.toISOString().split('T')[0];
   });
   const [endDate, setEndDate] = useState(() => new Date().toISOString().split('T')[0]);
+  const [showMoreRanking, setShowMoreRanking] = useState(false);
 
   // Generate PDF Summary for Selected Month
   const handleGeneratePDF = () => {
@@ -319,12 +320,16 @@ const MonthlyChart = React.memo(function MonthlyChart({ bills, currentMonth, sho
   });
 
   // Filter based on selected category and then sort by quantity
-  const rankingTopItems = [...activePurchasedItems]
-    .filter(item => !selectedCategory || (item.category || '').trim().toLowerCase() === selectedCategory.trim().toLowerCase())
-    .sort((a, b) => b.quantity - a.quantity)
-    .slice(0, 4);
+  const allMatchingRankingItems = useMemo(() => {
+    return [...activePurchasedItems]
+      .filter(item => !selectedCategory || (item.category || '').trim().toLowerCase() === selectedCategory.trim().toLowerCase())
+      .sort((a, b) => b.quantity - a.quantity);
+  }, [activePurchasedItems, selectedCategory]);
 
-  const maxItemQty = rankingTopItems.length > 0 ? Math.max(...rankingTopItems.map(i => i.quantity), 1) : 1;
+  const rankingLimit = showMoreRanking ? 15 : 4;
+  const rankingTopItems = useMemo(() => allMatchingRankingItems.slice(0, rankingLimit), [allMatchingRankingItems, rankingLimit]);
+
+  const maxItemQty = allMatchingRankingItems.length > 0 ? allMatchingRankingItems[0].quantity : 1;
 
 
   return (
@@ -730,7 +735,7 @@ const MonthlyChart = React.memo(function MonthlyChart({ bills, currentMonth, sho
                         </button>
                       )}
                     </span>
-                    <div className="space-y-1.5">
+                    <div className="space-y-1.5 font-sans">
                       {rankingTopItems.length === 0 ? (
                         <div className="text-center font-bold text-xs py-3 text-[var(--text-sub)]">
                           Nenhum produto cadastrado para essa categoria.
@@ -753,6 +758,16 @@ const MonthlyChart = React.memo(function MonthlyChart({ bills, currentMonth, sho
                             </div>
                           );
                         })
+                      )}
+
+                      {allMatchingRankingItems.length > 4 && (
+                        <button
+                          type="button"
+                          onClick={() => setShowMoreRanking(prev => !prev)}
+                          className="w-full py-2 hover:bg-slate-500/10 text-center text-[10px] font-extrabold text-indigo-400 hover:text-indigo-300 transition-all uppercase tracking-wider rounded-lg border border-dashed border-indigo-400/20 hover:border-indigo-400/40 select-none cursor-pointer mt-2"
+                        >
+                          {showMoreRanking ? 'Exibir Menos ▲' : `Exibir Mais (${allMatchingRankingItems.length - 4} adicionais) ▼`}
+                        </button>
                       )}
                     </div>
                   </div>

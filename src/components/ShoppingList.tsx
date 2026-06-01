@@ -65,6 +65,7 @@ const ShoppingList = React.memo(function ShoppingList({
   onConcludePurchase
 }: ShoppingListProps) {
   const [newItemName, setNewItemName] = useState('');
+  const [newItemQty, setNewItemQty] = useState(1);
   const [selectedCategory, setSelectedCategory] = useState('Alimentos');
   const [searchFilter, setSearchFilter] = useState('');
   const [activeTab, setActiveTab] = useState<'all' | 'pending' | 'checked'>('all');
@@ -150,8 +151,9 @@ const ShoppingList = React.memo(function ShoppingList({
     e.preventDefault();
     if (!newItemName.trim()) return;
 
-    onAddItem(newItemName.trim(), selectedCategory, 1);
+    onAddItem(newItemName.trim(), selectedCategory, newItemQty);
     setNewItemName('');
+    setNewItemQty(1);
   };
 
   const handleQuickAdd = (name: string, category: string) => {
@@ -200,7 +202,7 @@ const ShoppingList = React.memo(function ShoppingList({
         {/* Form add item */}
         <form onSubmit={handleSubmit} className="space-y-3" id="shopping-add-form">
           <div className="grid grid-cols-1 sm:grid-cols-12 gap-2">
-            <div className="sm:col-span-7 relative">
+            <div className="sm:col-span-5 relative">
               <input
                 type="text"
                 placeholder="Ex: Arroz, Leite, Detergente..."
@@ -221,6 +223,36 @@ const ShoppingList = React.memo(function ShoppingList({
                   <option key={cat.id} value={cat.id} className="bg-[var(--bg-card)] text-[var(--text-body)]">{cat.label}</option>
                 ))}
               </select>
+            </div>
+            <div className="sm:col-span-2 flex items-center bg-[var(--bg-input)] border border-[var(--border-input)] rounded-xl px-1 py-1 h-12 shadow-xs">
+              <button
+                type="button"
+                onClick={() => setNewItemQty(prev => Math.max(1, prev - 1))}
+                className="p-2 text-[var(--text-sub)] hover:text-[var(--text-main)] rounded-lg hover:bg-[var(--bg-input-hover)]/60 active:bg-[var(--bg-input-hover)] transition-colors cursor-pointer select-none"
+                title="Diminuir quantidade"
+              >
+                <Minus size={11} strokeWidth={2.5} />
+              </button>
+              <input
+                type="number"
+                min="1"
+                max="999"
+                value={newItemQty}
+                onChange={(e) => {
+                  const val = parseInt(e.target.value);
+                  setNewItemQty(isNaN(val) ? 1 : Math.max(1, val));
+                }}
+                className="w-full bg-transparent text-center text-xs font-mono font-bold text-[var(--text-body)] focus:outline-hidden [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                title="Quantidade do item"
+              />
+              <button
+                type="button"
+                onClick={() => setNewItemQty(prev => prev + 1)}
+                className="p-2 text-[var(--text-sub)] hover:text-[var(--text-main)] rounded-lg hover:bg-[var(--bg-input-hover)]/60 active:bg-[var(--bg-input-hover)] transition-colors cursor-pointer select-none"
+                title="Aumentar quantidade"
+              >
+                <Plus size={11} strokeWidth={2.5} />
+              </button>
             </div>
             <button
               type="submit"

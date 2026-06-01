@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { HouseBill, BillType } from '../types';
 import { 
   Plus, 
@@ -18,7 +18,8 @@ import {
   AlertCircle,
   Sparkles,
   Upload,
-  Check
+  Check,
+  Search
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -86,6 +87,7 @@ const BillsTracker = React.memo(function BillsTracker({
     return now.toISOString().split('T')[0];
   });
   const [isPaidOnAdd, setIsPaidOnAdd] = useState(false);
+  const [billSearchQuery, setBillSearchQuery] = useState('');
 
   // AI OCR States
   const [addMode, setAddMode] = useState<'manual' | 'ia'>('manual');
@@ -283,7 +285,32 @@ const BillsTracker = React.memo(function BillsTracker({
   };
 
   // Filter bills for selected month
-  const activeMonthBills = bills.filter(b => b.month === selectedMonth);
+  const activeMonthBills = useMemo(() => bills.filter(b => b.month === selectedMonth), [bills, selectedMonth]);
+
+  // Global or monthly search
+  const filteredBills = useMemo(() => {
+    const q = billSearchQuery.trim().toLowerCase();
+    if (!q) {
+      return activeMonthBills;
+    }
+    return bills.filter(b => {
+      const meta = CATEGORY_META[b.type] || CATEGORY_META.outros;
+      const displayTitle = b.type === 'outros' && b.customTitle ? b.customTitle : meta.label;
+      const lowerTitle = displayTitle.toLowerCase();
+      const valStr = b.value.toString();
+      const formattedVal = `r$ ${b.value.toFixed(2)}`;
+      const valNoCents = Math.floor(b.value).toString();
+      
+      return (
+        lowerTitle.includes(q) || 
+        valStr.includes(q) || 
+        formattedVal.includes(q) ||
+        valNoCents === q ||
+        b.dueDate.includes(q) ||
+        b.month.includes(q)
+      );
+    });
+  }, [bills, activeMonthBills, billSearchQuery]);
 
   const totalPaid = activeMonthBills
     .filter(b => b.paid)
@@ -552,18 +579,48 @@ const BillsTracker = React.memo(function BillsTracker({
         )}
       </div>
 
+      {/* Search and Filters Bar */}
+      <div className="mt-4 mb-3 relative" id="bills-search-bar">
+        <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-[var(--text-sub)]">
+          <Search size={14} className="opacity-70" />
+        </div>
+        <input
+          type="text"
+          placeholder="Buscar conta por fornecedor, valor ou vencimento (ex: SABESP, 129.90)..."
+          value={billSearchQuery}
+          onChange={(e) => setBillSearchQuery(e.target.value)}
+          className="w-full pl-9 pr-14 py-2.5 bg-[var(--bg-input)] hover:bg-[var(--bg-input-hover)] text-xs text-[var(--text-main)] font-semibold border border-[var(--border-input)] focus:border-indigo-500 focus:outline-none rounded-xl transition-all shadow-2xs"
+        />
+        {billSearchQuery && (
+          <button
+            type="button"
+            onClick={() => setBillSearchQuery('')}
+            className="absolute inset-y-0 right-0 pr-3.5 flex items-center text-[10px] font-extrabold text-indigo-400 hover:text-indigo-300 transition-colors uppercase tracking-wider select-none cursor-pointer"
+          >
+            Limpar
+          </button>
+        )}
+      </div>
+
+      {billSearchQuery && (
+        <div className="mb-2 px-1 flex items-center justify-between text-[9px] font-extrabold text-[var(--text-sub)] uppercase tracking-wider">
+          <span>Resultados da busca global (Todos os meses):</span>
+          <span className="text-indigo-400 font-mono">{filteredBills.length} encontrado(s)</span>
+        </div>
+      )}
+
       {/* Main Monthly Expenses List */}
-      <div className="flex-1 overflow-y-auto py-4 min-h-[220px] max-h-[380px]" id="bills-items-list">
-        {activeMonthBills.length === 0 ? (
+      <div className="flex-1 overflow-y-auto py-2 min-h-[220px] max-h-[380px]" id="bills-items-list">
+        {filteredBills.length === 0 ? (
           <div className="h-full flex flex-col items-center justify-center text-center p-8 text-[var(--text-sub)]">
             <AlertCircle size={36} className="stroke-1 text-[var(--text-sub)] mb-2" />
-            <p className="text-sm font-medium">Nenhuma conta cadastrada</p>
-            <p className="text-xs text-[var(--text-sub)]">Lance as despesas deste mês usando os botões acima</p>
+            <p className="text-sm font-medium">Nenhuma conta encontrada</p>
+            <p className="text-xs text-[var(--text-sub)]">Refine sua busca ou limpe o filtro para ver as contas do mês</p>
           </div>
         ) : (
           <div className="space-y-2.5">
             <AnimatePresence initial={false}>
-              {activeMonthBills.map(bill => {
+              {filteredBills.map(bill => {
                 const meta = CATEGORY_META[bill.type] || CATEGORY_META.outros;
                 const IconComponent = meta.icon;
                 const displayTitle = bill.type === 'outros' && bill.customTitle ? bill.customTitle : meta.label;
@@ -607,8 +664,13 @@ const BillsTracker = React.memo(function BillsTracker({
                             {displayTitle}
                           </span>
                         </div>
-                        <div className="flex items-center gap-1.5 mt-1 text-[11px] text-[var(--text-sub)] font-bold">
+                        <div className="flex flex-wrap items-center gap-1.5 mt-1 text-[11px] text-[var(--text-sub)] font-bold">
                           <span>Venc. {formatLocaleDate(bill.dueDate)}</span>
+                          {bill.month !== selectedMonth && (
+                            <span className="px-1.5 py-0.5 bg-indigo-500/10 text-indigo-300 text-[9px] rounded-md font-sans">
+                              {getBrazilianMonthYearLabel(bill.month)}
+                            </span>
+                          )}
                         </div>
                       </div>
                     </div>

@@ -5,6 +5,7 @@ import ShoppingList from './components/ShoppingList';
 import BillsTracker from './components/BillsTracker';
 import MonthlyChart from './components/MonthlyChart';
 import ConfirmModal from './components/ConfirmModal';
+import WhatsappBotModal from './components/WhatsappBotModal';
 import { db } from './firebase';
 import { 
   collection, 
@@ -24,7 +25,8 @@ import {
   Cloud,
   Check,
   Sun,
-  Moon
+  Moon,
+  MessageSquare
 } from 'lucide-react';
 
 // Get current date values
@@ -113,6 +115,7 @@ export default function App() {
   const [bills, setBills] = useState<HouseBill[]>([]);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [dbSynced, setDbSynced] = useState<boolean>(false);
+  const [isWhatsappModalOpen, setIsWhatsappModalOpen] = useState<boolean>(false);
   const [confirmModal, setConfirmModal] = useState<{
     isOpen: boolean;
     title: string;
@@ -474,7 +477,16 @@ export default function App() {
             </p>
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-3">
+            <button
+              onClick={() => setIsWhatsappModalOpen(true)}
+              className="inline-flex items-center gap-2 px-3.5 py-2.5 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 rounded-xl transition-all cursor-pointer shadow-sm select-none"
+              title="Configurar e Simular Assistente do WhatsApp"
+            >
+              <MessageSquare size={13} className="text-white" />
+              <span>WhatsApp Bot</span>
+            </button>
+
             <button
               onClick={() => setTheme(curr => curr === 'dark' ? 'light' : 'dark')}
               className="inline-flex items-center gap-2 px-3.5 py-2.5 text-xs font-bold text-[var(--text-sub)] hover:text-[var(--text-main)] bg-[var(--bg-card)] border border-[var(--border-card)] rounded-xl hover:bg-[var(--bg-input-hover)] transition-all cursor-pointer shadow-sm select-none"
@@ -562,6 +574,11 @@ export default function App() {
         type={confirmModal.type}
         onConfirm={confirmModal.onConfirm}
         onCancel={() => setConfirmModal(prev => ({ ...prev, isOpen: false }))}
+      />
+
+      <WhatsappBotModal
+        isOpen={isWhatsappModalOpen}
+        onClose={() => setIsWhatsappModalOpen(false)}
       />
     </div>
   );
