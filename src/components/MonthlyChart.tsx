@@ -258,10 +258,35 @@ const MonthlyChart = React.memo(function MonthlyChart({ bills, currentMonth, sho
   });
 
   const maxTotal = Math.max(...chartData.map(d => d.total), 50);
-  const totalPeriodPaid = chartData.reduce((sum, d) => sum + d.paid, 0);
-  const totalPeriodPending = chartData.reduce((sum, d) => sum + d.pending, 0);
-  const totalPeriodGrand = totalPeriodPaid + totalPeriodPending;
-  const averageMonthly = totalPeriodGrand / 6;
+  const [selectedCostMonth, setSelectedCostMonth] = useState<string>(currentMonth);
+  
+  // Keep original hovered logic, but use selectedCostMonth if nothing hovered
+  const activeCostMonthStr = hoveredIndex !== null ? chartData[hoveredIndex].month : selectedCostMonth;
+  const activeMonthBills = useMemo(() => bills.filter(b => b.month === activeCostMonthStr), [bills, activeCostMonthStr]);
+  const activeMonthTotal = activeMonthBills.reduce((sum, b) => sum + b.value, 0);
+
+  const costsByCategory = useMemo(() => {
+    const categoryNames: Record<string, string> = {
+      'agua': 'Água',
+      'energia': 'Energia',
+      'racao_gatos': 'Ração Gatos',
+      'racao_cachorro': 'Ração Cachorro',
+      'outros': 'Outros'
+    };
+    
+    const totals: Record<string, number> = {};
+    activeMonthBills.forEach(b => {
+      const cat = categoryNames[b.type] || 'Outros';
+      totals[cat] = (totals[cat] || 0) + b.value;
+    });
+    
+    return Object.entries(totals)
+      .map(([name, value]) => ({ name, value }))
+      .sort((a, b) => b.value - a.value);
+  }, [activeMonthBills]);
+
+  const maxCostValue = costsByCategory.length > 0 ? costsByCategory[0].value : 1;
+
 
 
   // --- TAB: INTEGRATED SHOPPING LIST PIE-CHART ---
@@ -429,9 +454,10 @@ const MonthlyChart = React.memo(function MonthlyChart({ bills, currentMonth, sho
                   return (
                     <div 
                       key={item.month} 
-                      className="flex-1 flex flex-col items-center group cursor-pointer"
+                      className={`flex-1 flex flex-col items-center group cursor-pointer ${item.month === selectedCostMonth ? 'opacity-100' : 'opacity-80 hover:opacity-100'}`}
                       onMouseEnter={() => setHoveredIndex(index)}
                       onMouseLeave={() => setHoveredIndex(null)}
+                      onClick={() => setSelectedCostMonth(item.month)}
                     >
                       <div className="w-full flex justify-center items-end h-[150px] relative">
                         {/* Grid Lines behind bars */}
@@ -468,33 +494,59 @@ const MonthlyChart = React.memo(function MonthlyChart({ bills, currentMonth, sho
             </div>
 
             {/* Legend and Info Metrics */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-auto border-t border-[var(--border-card)] pt-5 bg-[var(--bg-card)]" id="chart-metrics-legend">
-              <div className="flex flex-col justify-center">
-                <span className="text-[10px] font-extrabold text-[var(--text-sub)] uppercase tracking-widest block mb-3">Legenda das contas</span>
-                <div className="space-y-2">
-                  <div className="flex items-center gap-2">
-                    <span className="w-3 h-3 rounded-xs bg-emerald-500 block shadow-2xs"></span>
-                    <span className="text-xs font-bold text-[var(--text-body)]">Contas Pagas (R$)</span>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-auto border-t border-[var(--border-card)] pt-5 bg-[var(--bg-card)]">
+              <div className="flex flex-col justify-start">
+                <span className="text-[11px] font-extrabold text-[var(--text-sub)] uppercase tracking-wider block mb-3">Legenda das Contas</span>
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between p-2.5 rounded-xl border border-emerald-500/20 bg-emerald-500/5">
+                    <div className="flex items-center gap-2.5">
+                      <span className="w-3.5 h-3.5 rounded-sm bg-emerald-500 block shadow-2xs"></span>
+                      <span className="text-xs font-bold text-[var(--text-body)]">Contas Pagas</span>
+                    </div>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <span className="w-3 h-3 rounded-xs bg-amber-400 block shadow-2xs"></span>
-                    <span className="text-xs font-bold text-[var(--text-body)]">Contas Pendentes (R$)</span>
+                  <div className="flex items-center justify-between p-2.5 rounded-xl border border-amber-400/20 bg-amber-400/5">
+                    <div className="flex items-center gap-2.5">
+                      <span className="w-3.5 h-3.5 rounded-sm bg-amber-400 block shadow-2xs"></span>
+                      <span className="text-xs font-bold text-[var(--text-body)]">Contas Pendentes</span>
+                    </div>
                   </div>
+                </div>
+                <div className="mt-4 text-[10px] text-[var(--text-sub)] flex items-center gap-1 font-medium">
+                  <Info size={12} className="text-indigo-400" />
+                  <span>Clique nas colunas do gráfico para ver os detalhes do mês.</span>
                 </div>
               </div>
 
-              <div className="bg-[var(--bg-input)] rounded-2xl p-4 border border-[var(--border-card)] shadow-2xs flex flex-col justify-center">
-                <span className="text-[10px] font-extrabold text-[var(--text-sub)] uppercase tracking-widest block mb-1">Média do Semestre</span>
-                <div className="flex items-baseline gap-1">
-                  <span className="text-xs font-semibold text-[var(--text-sub)]">R$</span>
-                  <span className="text-lg font-extrabold font-display text-[var(--text-main)]">
-                    {averageMonthly.toFixed(2)}
+              <div className="flex flex-col border border-[var(--border-card)] rounded-2xl bg-[var(--bg-input)]/40 p-4">
+                <div className="flex items-center justify-between mb-3 border-b border-[var(--border-card)] pb-2">
+                  <span className="text-[11px] font-extrabold text-[var(--text-main)] uppercase tracking-wider">
+                    {getMonthLabel(activeCostMonthStr)} / {activeCostMonthStr.split('-')[0]}
                   </span>
-                  <span className="text-[9px] font-bold text-[var(--text-sub)]">/mês</span>
+                  <span className="text-xs font-mono font-bold text-indigo-400">R$ {activeMonthTotal.toFixed(2)}</span>
                 </div>
-                <p className="text-[10px] text-[var(--text-sub)] mt-1 font-bold leading-normal">
-                  Reflete despesas acumuladas de {chartData[0].monthName} a {chartData[5].monthName}.
-                </p>
+                
+                <div className="flex-1 space-y-2 overflow-y-auto pr-1" style={{ maxHeight: '140px' }}>
+                  {costsByCategory.length === 0 ? (
+                    <div className="text-center font-bold text-xs py-4 text-[var(--text-sub)]">
+                      Nenhuma conta neste mês.
+                    </div>
+                  ) : (
+                    costsByCategory.map(cat => {
+                      const widthPct = (cat.value / maxCostValue) * 100;
+                      return (
+                        <div key={cat.name} className="flex flex-col gap-1">
+                          <div className="flex items-center justify-between text-[11px] font-semibold text-[var(--text-body)]">
+                            <span className="truncate pr-2">{cat.name}</span>
+                            <span className="font-mono flex-shrink-0">R$ {cat.value.toFixed(2)}</span>
+                          </div>
+                          <div className="w-full bg-[var(--bg-input)] h-1.5 rounded-full overflow-hidden">
+                            <div className="bg-indigo-500 h-full rounded-full transition-all duration-300" style={{ width: `${widthPct}%` }}></div>
+                          </div>
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
               </div>
             </div>
           </motion.div>

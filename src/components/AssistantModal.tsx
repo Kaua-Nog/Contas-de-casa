@@ -121,8 +121,8 @@ export default function AssistantModal({ isOpen, onClose }: AssistantModalProps)
     const file = e.target.files?.[0];
     if (!file) return;
 
-    if (!file.type.startsWith('image/')) {
-      alert('Por favor, envie apenas fotos de comprovantes ou faturas.');
+    if (!file.type.startsWith('image/') && file.type !== 'application/pdf') {
+      alert('Por favor, envie apenas fotos, PDFs ou documentos.');
       return;
     }
 
@@ -132,11 +132,11 @@ export default function AssistantModal({ isOpen, onClose }: AssistantModalProps)
       
       const userMsg: Message = {
         id: `user-${Date.now()}`,
-        text: `📸 Foto enviada: ${file.name}`,
+        text: `📎 Arquivo enviado: ${file.name}`,
         sender: 'user',
         timestamp: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
-        mediaUrl: reader.result as string,
-        isImage: true
+        mediaUrl: file.type.startsWith('image/') ? reader.result as string : undefined,
+        isImage: file.type.startsWith('image/')
       };
 
       setMessages(prev => [...prev, userMsg]);
@@ -156,74 +156,8 @@ export default function AssistantModal({ isOpen, onClose }: AssistantModalProps)
 
   return (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center p-3 h-full z-50 animate-fade-in" id="assistant-modal">
-      <div className="bg-[var(--bg-card)] border border-[var(--border-card)] w-full max-w-4xl h-[90vh] max-h-[850px] rounded-3xl overflow-hidden shadow-2xl flex flex-col md:flex-row transition-all">
-        
-        {/* Left Side: Information */}
-        <div className="flex-1 border-r border-[var(--border-card)] flex flex-col p-6 min-h-0 bg-slate-900/10 hidden md:flex">
-          <div className="flex items-center justify-between pb-4 border-b border-[var(--border-card)] mb-4">
-            <div className="flex items-center gap-2.5">
-              <div className="p-2 bg-emerald-500/15 text-emerald-400 rounded-xl">
-                <MessageSquare size={20} />
-              </div>
-              <div>
-                <h3 className="font-display font-extrabold text-base text-[var(--text-main)]">Assistente Virtual</h3>
-                <p className="text-[10px] text-[var(--text-sub)] uppercase tracking-widest font-extrabold">Chat Interativo</p>
-              </div>
-            </div>
-          </div>
-
-          <div className="flex-1 overflow-y-auto pr-1 space-y-4 text-xs text-[var(--text-main)]">
-            <div className="space-y-4 animate-fade-in font-medium leading-relaxed">
-              <div className="p-4 bg-[var(--bg-input)] rounded-2xl border border-[var(--border-input)]">
-                <h4 className="text-xs font-extrabold text-[var(--text-main)] uppercase tracking-wider mb-2">💡 Experimente o Assistente</h4>
-                <p className="text-[11px] text-[var(--text-sub)] mb-3">
-                  Use o chat à direita para pedir lançamentos na casa de forma natural. As alterações são sincronizadas direto na dashboard!
-                </p>
-                
-                <div className="space-y-2.5 text-[11px] font-semibold">
-                  <div className="p-2.5 bg-[var(--bg-card)] border border-[var(--border-input)] rounded-xl flex items-start gap-2.5 hover:border-slate-650 transition-colors cursor-pointer" onClick={() => setInputVal('adicionar 3 detergentes e 2 pacotes de macarrão')}>
-                    <ChevronRight size={13} className="text-indigo-400 mt-0.5 flex-shrink-0" />
-                    <p>
-                      <span className="text-[var(--text-main)] block font-bold">🛒 Lista de Compras:</span>
-                      "adicionar 3 detergentes e 2 pacotes de macarrão"
-                    </p>
-                  </div>
-
-                  <div className="p-2.5 bg-[var(--bg-card)] border border-[var(--border-input)] rounded-xl flex items-start gap-2.5 hover:border-slate-650 transition-colors cursor-pointer" onClick={() => setInputVal('lançar energia Enel R$ 139,40 vencimento dia 15')}>
-                    <ChevronRight size={13} className="text-indigo-400 mt-0.5 flex-shrink-0" />
-                    <p>
-                      <span className="text-[var(--text-main)] block font-bold">⚡ Contas Domésticas:</span>
-                      "lançar energia Enel R$ 139,40 vencimento dia 15"
-                    </p>
-                  </div>
-
-                  <div className="p-2.5 bg-[var(--bg-card)] border border-[var(--border-input)] rounded-xl flex items-start gap-2.5 hover:border-slate-650 transition-colors cursor-pointer" onClick={() => setInputVal('comprar sabonete, xampu e condicionador')}>
-                    <ChevronRight size={13} className="text-indigo-400 mt-0.5 flex-shrink-0" />
-                    <p>
-                      <span className="text-[var(--text-main)] block font-bold">🧼 Multi-itens sem quantidade:</span>
-                      "comprar sabonete, xampu e condicionador"
-                    </p>
-                  </div>
-                </div>
-              </div>
-
-              <div className="px-1 text-[11px] text-[var(--text-sub)]">
-                <p className="flex items-center gap-1.5 font-extrabold text-indigo-400 uppercase tracking-wider mb-1.5">
-                  <ImageIcon size={12} />
-                  <span>Lançando com imagens:</span>
-                </p>
-                <p>
-                  Clique no ícone de clipe de papel <Paperclip size={11} className="inline-block mx-0.5" /> para enviar comprovantes ou contas e testar o OCR inteligente.
-                </p>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Right Side: Virtual Mobile Device Smartphone UI Layout */}
-        <div className="flex-1 max-w-sm w-full mx-auto md:max-w-none bg-[#0b141a] md:w-[380px] flex flex-col min-h-0 select-none shadow-inner rounded-3xl md:rounded-l-none overflow-hidden">
-          
-          {/* Mock Smartphone Statusbar Header */}
+      <div className="bg-[#0b141a] w-full max-w-md h-[90vh] max-h-[850px] rounded-3xl overflow-hidden shadow-2xl flex flex-col transition-all">
+        {/* Mock Smartphone Statusbar Header */}
           <div className="bg-[#1f2c34] px-4 py-3.5 flex items-center justify-between border-b border-[#0b141a] flex-shrink-0">
             <div className="flex items-center gap-3">
               {/* Green Bot Avatar representational badge */}
@@ -301,7 +235,7 @@ export default function AssistantModal({ isOpen, onClose }: AssistantModalProps)
               type="file"
               ref={fileInputRef}
               onChange={handleFileChange}
-              accept="image/*"
+              accept="image/*,application/pdf"
               className="hidden"
             />
             {/* Attachment paperclip trigger button element */}
@@ -310,7 +244,7 @@ export default function AssistantModal({ isOpen, onClose }: AssistantModalProps)
               onClick={handleImageUploadClick}
               disabled={isTyping}
               className="text-slate-300 hover:text-slate-100 p-1.5 disabled:opacity-40 transition-colors cursor-pointer flex-shrink-0"
-              title="Mandar Foto comprovante/boleto"
+              title="Mandar arquivo"
             >
               <Paperclip size={18} />
             </button>
@@ -333,7 +267,6 @@ export default function AssistantModal({ isOpen, onClose }: AssistantModalProps)
             </button>
           </form>
 
-        </div>
       </div>
     </div>
   );
