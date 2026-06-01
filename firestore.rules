@@ -15,7 +15,7 @@ service cloud.firestore {
       return data.id is string
         && data.name is string && data.name.size() <= 100
         && data.category is string && data.category.size() <= 50
-        && data.quantity is int && data.quantity >= 1
+        && (data.quantity is int || data.quantity is number) && data.quantity >= 1
         && data.checked is bool;
     }
 
@@ -33,6 +33,10 @@ service cloud.firestore {
       allow read: if true;
       allow create, update: if isValidId(itemId) && isValidShoppingItem(request.resource.data);
       allow delete: if true;
+    }
+
+    match /settings/{settingId} {
+      allow read, write: if true;
     }
 
     match /bills/{billId} {

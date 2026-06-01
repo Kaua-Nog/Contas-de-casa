@@ -5,7 +5,7 @@ import ShoppingList from './components/ShoppingList';
 import BillsTracker from './components/BillsTracker';
 import MonthlyChart from './components/MonthlyChart';
 import ConfirmModal from './components/ConfirmModal';
-import WhatsappBotModal from './components/WhatsappBotModal';
+import AssistantModal from './components/AssistantModal';
 import { db } from './firebase';
 import { 
   collection, 
@@ -115,7 +115,7 @@ export default function App() {
   const [bills, setBills] = useState<HouseBill[]>([]);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [dbSynced, setDbSynced] = useState<boolean>(false);
-  const [isWhatsappModalOpen, setIsWhatsappModalOpen] = useState<boolean>(false);
+  const [isAssistantModalOpen, setIsAssistantModalOpen] = useState<boolean>(false);
   const [confirmModal, setConfirmModal] = useState<{
     isOpen: boolean;
     title: string;
@@ -479,12 +479,12 @@ export default function App() {
 
           <div className="flex flex-wrap items-center gap-3">
             <button
-              onClick={() => setIsWhatsappModalOpen(true)}
-              className="inline-flex items-center gap-2 px-3.5 py-2.5 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 rounded-xl transition-all cursor-pointer shadow-sm select-none"
-              title="Configurar e Simular Assistente do WhatsApp"
+              onClick={() => setIsAssistantModalOpen(true)}
+              className="inline-flex items-center gap-2 px-3.5 py-2.5 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 rounded-xl transition-all cursor-pointer shadow-sm select-none"
+              title="Conversar com Assistente IA"
             >
               <MessageSquare size={13} className="text-white" />
-              <span>WhatsApp Bot</span>
+              <span>Assistente IA</span>
             </button>
 
             <button
@@ -576,9 +576,9 @@ export default function App() {
         onCancel={() => setConfirmModal(prev => ({ ...prev, isOpen: false }))}
       />
 
-      <WhatsappBotModal
-        isOpen={isWhatsappModalOpen}
-        onClose={() => setIsWhatsappModalOpen(false)}
+      <AssistantModal
+        isOpen={isAssistantModalOpen}
+        onClose={() => setIsAssistantModalOpen(false)}
       />
     </div>
   );
