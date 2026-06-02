@@ -6,6 +6,7 @@ import BillsTracker from './components/BillsTracker';
 import MonthlyChart from './components/MonthlyChart';
 import ConfirmModal from './components/ConfirmModal';
 import AssistantModal from './components/AssistantModal';
+import SheetsSyncModal from './components/SheetsSyncModal';
 import { db } from './firebase';
 import { 
   collection, 
@@ -116,6 +117,8 @@ export default function App() {
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [dbSynced, setDbSynced] = useState<boolean>(false);
   const [isAssistantModalOpen, setIsAssistantModalOpen] = useState<boolean>(false);
+  const [isSheetsModalOpen, setIsSheetsModalOpen] = useState<boolean>(false);
+  const [activeAppTab, setActiveAppTab] = useState<'shopping' | 'bills' | 'dashboards'>('shopping');
   const [confirmModal, setConfirmModal] = useState<{
     isOpen: boolean;
     title: string;
@@ -478,14 +481,26 @@ export default function App() {
           </div>
 
           <div className="flex flex-wrap items-center gap-3">
-            <button
-              onClick={() => setIsAssistantModalOpen(true)}
-              className="inline-flex items-center gap-2 px-3.5 py-2.5 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 rounded-xl transition-all cursor-pointer shadow-sm select-none"
-              title="Conversar com Assistente IA"
-            >
-              <MessageSquare size={13} className="text-white" />
-              <span>Assistente IA</span>
-            </button>
+            {(activeAppTab === 'shopping' || activeAppTab === 'bills') && (
+              <>
+                <button
+                  onClick={() => setIsSheetsModalOpen(true)}
+                  className="inline-flex items-center gap-2 px-3.5 py-2.5 text-xs font-bold text-emerald-600 hover:text-emerald-500 bg-emerald-500/10 hover:bg-emerald-500/20 active:bg-emerald-500/30 rounded-xl transition-all cursor-pointer shadow-sm select-none border border-emerald-500/20"
+                  title="Sincronizar com Planilha Google Sheets"
+                >
+                  <RefreshCw size={13} />
+                  <span>Sincronizar Google Sheets</span>
+                </button>
+                <button
+                  onClick={() => setIsAssistantModalOpen(true)}
+                  className="inline-flex items-center gap-2 px-3.5 py-2.5 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 rounded-xl transition-all cursor-pointer shadow-sm select-none"
+                  title="Conversar com Assistente IA"
+                >
+                  <MessageSquare size={13} className="text-white" />
+                  <span>Assistente IA</span>
+                </button>
+              </>
+            )}
 
             <button
               onClick={() => setTheme(curr => curr === 'dark' ? 'light' : 'dark')}
@@ -512,16 +527,38 @@ export default function App() {
           </div>
         </header>
 
-        {/* SECTION 1: Dynamic summaries widgets banner */}
-        <DashboardOverview 
-          bills={bills} 
-          shoppingItems={shoppingItems} 
-          currentMonth={selectedMonth} 
-        />
+        {/* Main App Tabs */}
+        <div className="flex border-b border-[var(--border-card)] overflow-x-auto gap-2 sm:gap-4 no-scrollbar pb-1">
+          <button
+            onClick={() => setActiveAppTab('shopping')}
+            className={`px-4 sm:px-6 py-3 text-sm font-bold border-b-2 transition-colors whitespace-nowrap ${activeAppTab === 'shopping' ? 'border-indigo-500 text-indigo-400' : 'border-transparent text-[var(--text-sub)] hover:text-[var(--text-main)]'}`}
+          >
+            Lista de Compras
+          </button>
+          <button
+            onClick={() => setActiveAppTab('bills')}
+            className={`px-4 sm:px-6 py-3 text-sm font-bold border-b-2 transition-colors whitespace-nowrap ${activeAppTab === 'bills' ? 'border-indigo-500 text-indigo-400' : 'border-transparent text-[var(--text-sub)] hover:text-[var(--text-main)]'}`}
+          >
+            Contas Domésticas
+          </button>
+          <button
+            onClick={() => setActiveAppTab('dashboards')}
+            className={`px-4 sm:px-6 py-3 text-sm font-bold border-b-2 transition-colors whitespace-nowrap ${activeAppTab === 'dashboards' ? 'border-indigo-500 text-indigo-400' : 'border-transparent text-[var(--text-sub)] hover:text-[var(--text-main)]'}`}
+          >
+            Dashboards Analíticos
+          </button>
+        </div>
 
-        {/* SECTION 2: Grid view: Left list, Right tracker */}
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8" id="interactive-tools-grid">
-          <div className="lg:col-span-6" id="column-shopping">
+        {/* TAB VIEWS */}
+        
+        {activeAppTab === 'shopping' && (
+          <div className="animate-fade-in space-y-6" id="column-shopping">
+            <DashboardOverview 
+              bills={bills} 
+              shoppingItems={shoppingItems} 
+              currentMonth={selectedMonth} 
+              type="shopping"
+            />
             <ShoppingList 
               items={shoppingItems.filter(item => !item.concluded)}
               currentMonth={selectedMonth}
@@ -534,8 +571,16 @@ export default function App() {
               onConcludePurchase={handleConcludePurchase}
             />
           </div>
-          
-          <div className="lg:col-span-6" id="column-bills">
+        )}
+
+        {activeAppTab === 'bills' && (
+          <div className="animate-fade-in space-y-6" id="column-bills">
+            <DashboardOverview 
+              bills={bills} 
+              shoppingItems={shoppingItems} 
+              currentMonth={selectedMonth} 
+              type="bills"
+            />
             <BillsTracker 
               bills={bills}
               selectedMonth={selectedMonth}
@@ -545,16 +590,20 @@ export default function App() {
               onRemoveBill={handleRemoveBill}
             />
           </div>
-        </div>
+        )}
 
-        {/* SECTION 3: Large Historical monthly SVG graph with Category Pie Chart */}
-        <div id="column-analytics-chart">
-          <MonthlyChart 
-            bills={bills}
-            currentMonth={selectedMonth}
-            shoppingItems={shoppingItems}
-          />
-        </div>
+        {activeAppTab === 'dashboards' && (
+          <div className="animate-fade-in space-y-8 flex flex-col" id="dashboard-views">
+            {/* SECTION 3: Large Historical monthly SVG graph with Category Pie Chart */}
+            <div id="column-analytics-chart">
+              <MonthlyChart 
+                bills={bills}
+                currentMonth={selectedMonth}
+                shoppingItems={shoppingItems}
+              />
+            </div>
+          </div>
+        )}
 
         {/* Footer info badge */}
         <footer className="text-center text-slate-500 text-xs py-10 border-t border-[#1d274c]" id="global-credits-footer">
@@ -579,6 +628,11 @@ export default function App() {
       <AssistantModal
         isOpen={isAssistantModalOpen}
         onClose={() => setIsAssistantModalOpen(false)}
+      />
+
+      <SheetsSyncModal
+        isOpen={isSheetsModalOpen}
+        onClose={() => setIsSheetsModalOpen(false)}
       />
     </div>
   );

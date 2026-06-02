@@ -244,30 +244,37 @@ async function startServer() {
 
     } else {
       console.log(`[Assistant Bot] Enviando texto "${incomingText}" para a IA...`);
-      const textPrompt = `Você é o assistente inteligente "Lar em Ordem". O usuário enviará uma mensagem de texto querendo:
-      a) Lançar uma conta de casa (Exemplos: "lançar conta Sabesp R$ 56 vencimento 10/06", "conta de luz Enel 120,50 para dia 25")
-      b) Adicionar mantimentos/itens na lista de compras (Exemplos: "colocar 3 sabonetes e 2 leites na lista", "adicionar arroz, feijão e chocolate de sobremesa", "detergente 1, agua sanitaria 2, macarrao 4")
+      const textPrompt = `Você é o assistente inteligente "Lar em Ordem" que lê um grupo do WhatsApp.
+      Sua tarefa central é IDENTIFICAR O QUE É UM COMANDO VÁLIDO E O QUE É CONVERSA NORMAL.
       
-      Identifique a intenção ('bill' ou 'shopping') e extraia os detalhes.
+      Classifique a intenção do usuário em 3 categorias exatas:
+      1) "bill": Comando claro para lançar/adicionar uma conta ou despesa. (Ex: "lançar conta Sabesp 50", "conta de luz Enel 120,50")
+      2) "shopping": Comando listando produtos ou pedindo para adicionar itens ao mercado/farmácia. (Ex: "colocar 3 sabonetes na lista", "detergente 1, arroz", "comprar: leite")
+      3) "fallback": QUALQUER outra coisa. Mensagens incompletas, chat normal, saudações ("bom dia", "tudo bem?", "me ajuda"), áudios não transcritos, PDFs etc. Você DEVE marcar como "fallback" se não for conta e nem lista de mercado.
+      
       Para 'shopping' (lista de compras):
-         Mapeie os itens solicitados em:
-         "shoppingItems": array de objetos contendo:
-            - "name": nome limpo do produto (ex: "Sabonete Dove")
-            - "quantity": unidade numérica (default 1)
-            - "category": classificação inteligente baseada no nome (uma entre: "Alimentos", "Bebidas", "Limpeza", "Higiene", "Outros")
+         Extraia:
+         "shoppingItems": array de:
+            - "name": nome do produto (ex: "Sabonete Dove")
+            - "quantity": unidade numérica
+            - "category": ("Alimentos", "Bebidas", "Limpeza", "Higiene", "Outros")
             
       Para 'bill' (lançar conta da casa):
-         Mapeie a conta em:
+         Extraia:
          "bill": objeto contendo:
-            - "type": tipo exato ("agua", "energia", "racao_gatos", "racao_cachorro", "outros")
-            - "customTitle": se tipo for "outros", coloque o nome (ex: "Internet Claro"). Para água/luz coloque o fornecedor (ex: "Sabesp" ou "Enel").
-            - "value": valor numérico float (ex: 56.40)
-            - "dueDate": data de vencimento "YYYY-MM-DD". Hoje é dia 2026-06-01 (segunda-feira). Calcule o ano/mês corretamente.
+            - "type": ("agua", "energia", "racao_gatos", "racao_cachorro", "outros")
+            - "customTitle": nome do fornecedor ou título
+            - "value": float do valor
+            - "dueDate": "YYYY-MM-DD" (Hoje: formatado localmente).
+            
+      Para 'fallback' (Conversa normal):
+         Não adicione arrays nem objetos extrínsecos.
 
-      Retorne obrigatoriamente uma estrutura JSON contendo os campos descritos e uma mensagem amigável:
+      Retorne APENAS um JSON válido contendo:
       - "intent": "bill" | "shopping" | "fallback"
-      - "assistantReplyText": Mensagem simpática de retorno resumindo o que foi inserido.` +
-      `\n\nMensagem do usuário: "${incomingText}"`;
+      - "assistantReplyText": Se for 'fallback', escreva exatamente "[Ignorado] Conversa normal.". Se for válido, crie um resumo curto do que foi detectado.
+      
+      \nMensagem do usuário: "${incomingText}"`;
 
       const response = await ai.models.generateContent({
         model: 'gemini-2.5-flash',
@@ -322,11 +329,15 @@ async function startServer() {
               cat = 'Outros';
             }
 
+            const rawQuant = String(item.quantity).replace(',', '.');
+            let q = Number(rawQuant);
+            if (isNaN(q) || q < 1) q = 1;
+
             const newItem = {
               id: itemId,
-              name: item.name || 'Sem nome',
-              quantity: Number(item.quantity) || 1,
-              category: cat,
+              name: String(item.name || 'Sem nome').substring(0, 100),
+              quantity: q,
+              category: String(cat).substring(0, 50),
               checked: false,
               date: new Date().toISOString().split('T')[0],
               concluded: false
@@ -345,14 +356,23 @@ async function startServer() {
             bType = 'outros';
           }
 
-          const dueDateVal = String(b.dueDate || new Date().toISOString().split('T')[0]);
+          let dueDateVal = String(b.dueDate || new Date().toISOString().split('T')[0]).trim();
+          if (dueDateVal.length > 10) {
+            dueDateVal = dueDateVal.substring(0, 10);
+          } else if (dueDateVal.length < 10) {
+            dueDateVal = new Date().toISOString().split('T')[0];
+          }
           const billMonth = dueDateVal.substring(0, 7);
+
+          const rawVal = String(b.value).replace(',', '.');
+          let val = Number(rawVal);
+          if (isNaN(val) || val < 0) val = 0;
 
           const newBill = {
             id: billId,
             type: bType,
-            customTitle: b.customTitle || '',
-            value: Number(b.value) || 0,
+            customTitle: String(b.customTitle || '').substring(0, 100),
+            value: val,
             dueDate: dueDateVal,
             month: billMonth,
             paid: false
@@ -387,6 +407,56 @@ async function startServer() {
         success: false,
         error: err instanceof Error ? err.message : 'Falha ao processar comando.'
       });
+    }
+  });
+
+  // Evolution/Baileys WhatsApp API Webhook Endpoint
+  app.post('/api/webhook/whatsapp', async (req, res): Promise<any> => {
+    try {
+      const body = req.body;
+      
+      // Retorna 200 rápido para ack do webhook
+      res.status(200).json({ received: true });
+
+      // Se for um array de eventos (lotes), ou se o evento estiver na raiz
+      // Evolution API envia { event: 'messages.upsert', data: { ... } }
+      const events = Array.isArray(body) ? body : [body];
+
+      for (const payload of events) {
+        // Pega data, pode vir encapsulado dependendo da api
+        const data = payload.data || payload; 
+        
+        // Evolution API usa data.message. Se for array de mensagens
+        const messages = Array.isArray(data.message) ? data.message : (data.messages || [data]);
+        
+        for (const msg of messages) {
+          if (!msg) continue;
+          
+          let remoteJid = msg?.key?.remoteJid || data?.key?.remoteJid;
+          
+          // FILTRO DO GRUPO (o mesmo ID que usava no Make)
+          if (remoteJid !== '120363428218497591@g.us') {
+            console.log(`[Webhook] Mensagem ignorada do JID: ${remoteJid}`);
+            continue;
+          }
+
+          // Extrai o texto da mensagem (Baileys/Evolution API)
+          const messageContent = msg?.message?.conversation 
+                              || msg?.message?.extendedTextMessage?.text 
+                              || data?.message?.extendedTextMessage?.text
+                              || data?.message?.conversation
+                              || '';
+
+          if (!messageContent) continue;
+
+          console.log(`[Webhook] Mensagem capturada do grupo alvo: "${messageContent}"`);
+
+          // Envia para o pipeline da IA que analisa e salva no Firestore
+          await handleChatLogic({ text: messageContent }, db);
+        }
+      }
+    } catch (error) {
+      console.error('[Webhook Error]:', error);
     }
   });
 
