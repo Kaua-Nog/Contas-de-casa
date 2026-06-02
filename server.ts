@@ -79,7 +79,7 @@ async function startServer() {
       };
 
       const response = await ai.models.generateContent({
-        model: 'gemini-2.5-flash',
+        model: 'gemini-3.1-flash-lite',
         contents: { parts: [inlinePart, promptPart] },
         config: {
           responseMimeType: 'application/json',
@@ -203,7 +203,7 @@ async function startServer() {
       };
 
       const response = await ai.models.generateContent({
-        model: 'gemini-2.5-flash',
+        model: 'gemini-3.1-flash-lite',
         contents: { parts: [inlinePart, imagePrompt] },
         config: {
           responseMimeType: 'application/json',
@@ -248,7 +248,7 @@ async function startServer() {
       Sua tarefa central é IDENTIFICAR O QUE É UM COMANDO VÁLIDO E O QUE É CONVERSA NORMAL.
       
       Classifique a intenção do usuário em 3 categorias exatas:
-      1) "bill": Comando claro para lançar/adicionar uma conta ou despesa. (Ex: "lançar conta Sabesp 50", "conta de luz Enel 120,50")
+      1) "bill": Comando claro para lançar/adicionar uma conta ou despesa, incluindo ração de animais ("ração", "racao do cachorro", "conta de água"). (Ex: "lançar conta Sabesp 50", "ração do cachorro 100")
       2) "shopping": Comando listando produtos ou pedindo para adicionar itens ao mercado/farmácia. (Ex: "colocar 3 sabonetes na lista", "detergente 1, arroz", "comprar: leite")
       3) "fallback": QUALQUER outra coisa. Mensagens incompletas, chat normal, saudações ("bom dia", "tudo bem?", "me ajuda"), áudios não transcritos, PDFs etc. Você DEVE marcar como "fallback" se não for conta e nem lista de mercado.
       
@@ -259,13 +259,13 @@ async function startServer() {
             - "quantity": unidade numérica
             - "category": ("Alimentos", "Bebidas", "Limpeza", "Higiene", "Outros")
             
-      Para 'bill' (lançar conta da casa):
+      Para 'bill' (lançar conta da casa/despesa):
          Extraia:
          "bill": objeto contendo:
-            - "type": ("agua", "energia", "racao_gatos", "racao_cachorro", "outros")
-            - "customTitle": nome do fornecedor ou título
-            - "value": float do valor
-            - "dueDate": "YYYY-MM-DD" (Hoje: formatado localmente).
+            - "type": Classifique EXATAMENTE em um destes: "agua", "energia", "racao_gatos", "racao_cachorro", "outros". Se falar "água", "conta de água", é "agua". Se falar "ração do cachorro" ou "ração cachorro", é "racao_cachorro".
+            - "customTitle": O nome amigável/fornecedor (ex: se "agua", coloque "Sabesp" ou "CAERN" se citado, se não, só "Conta de Água". Se "racao_cachorro", coloque "Ração do cachorro").
+            - "value": float do valor (ex: para "100 reais" use 100.0). Se o valor não for especificado, coloque 0.
+            - "dueDate": Data no formato "YYYY-MM-DD". Se não for dito o dia, use a data de hoje. Se apenas o mês e dia for dito, use o ano atual. Hoje é ${new Date().toISOString().split('T')[0]}.
             
       Para 'fallback' (Conversa normal):
          Não adicione arrays nem objetos extrínsecos.
@@ -277,7 +277,7 @@ async function startServer() {
       \nMensagem do usuário: "${incomingText}"`;
 
       const response = await ai.models.generateContent({
-        model: 'gemini-2.5-flash',
+        model: 'gemini-3.1-flash-lite',
         contents: textPrompt,
         config: {
           responseMimeType: 'application/json',
@@ -414,9 +414,7 @@ async function startServer() {
   app.post('/api/webhook/whatsapp', async (req, res): Promise<any> => {
     try {
       const body = req.body;
-      
-      // Retorna 200 rápido para ack do webhook
-      res.status(200).json({ received: true });
+      console.log(`[Webhook] Recebendo payload bruto. Array? ${Array.isArray(body)}. body:`, JSON.stringify(body).substring(0, 500));
 
       // Se for um array de eventos (lotes), ou se o evento estiver na raiz
       // Evolution API envia { event: 'messages.upsert', data: { ... } }
@@ -424,19 +422,17 @@ async function startServer() {
 
       for (const payload of events) {
         // Pega data, pode vir encapsulado dependendo da api
-        const data = payload.data || payload; 
+        const data = payload?.data || payload; 
         
         // Evolution API usa data.message. Se for array de mensagens
-        const messages = Array.isArray(data.message) ? data.message : (data.messages || [data]);
+        const messages = Array.isArray(data?.message) ? data?.message : (data?.messages || [data]);
         
         for (const msg of messages) {
           if (!msg) continue;
           
           let remoteJid = msg?.key?.remoteJid || data?.key?.remoteJid;
           
-          // FILTRO DO GRUPO (o mesmo ID que usava no Make)
           if (remoteJid !== '120363428218497591@g.us') {
-            console.log(`[Webhook] Mensagem ignorada do JID: ${remoteJid}`);
             continue;
           }
 
@@ -445,18 +441,45 @@ async function startServer() {
                               || msg?.message?.extendedTextMessage?.text 
                               || data?.message?.extendedTextMessage?.text
                               || data?.message?.conversation
+                              || msg?.message?.imageMessage?.caption
+                              || data?.message?.imageMessage?.caption
+                              || msg?.message?.documentMessage?.caption
+                              || data?.message?.documentMessage?.caption
                               || '';
 
-          if (!messageContent) continue;
+          let base64Raw = msg?.message?.base64 || data?.base64 || msg?.base64 
+                       || data?.message?.imageMessage?.base64 || msg?.message?.imageMessage?.base64 
+                       || data?.message?.documentMessage?.base64 || msg?.message?.documentMessage?.base64 || '';
+          
+          let mimeType = msg?.message?.imageMessage?.mimetype || data?.message?.imageMessage?.mimetype 
+                      || msg?.message?.documentMessage?.mimetype || data?.message?.documentMessage?.mimetype || '';
 
-          console.log(`[Webhook] Mensagem capturada do grupo alvo: "${messageContent}"`);
+          if (typeof base64Raw === 'string' && base64Raw.includes('base64,')) {
+             base64Raw = base64Raw.split('base64,')[1];
+          }
+
+          if (!messageContent && !base64Raw) {
+             console.log(`[Webhook] Mensagem do grupo alvo não continha texto nem mídia. Ignorando.`);
+             continue;
+          }
+
+          console.log(`[Webhook] Mensagem capturada do grupo. Texto: "${messageContent}", Mime: ${mimeType}, Tem Media? ${!!base64Raw}`);
 
           // Envia para o pipeline da IA que analisa e salva no Firestore
-          await handleChatLogic({ text: messageContent }, db);
+          try {
+            await handleChatLogic({ text: messageContent, fileData: base64Raw, mimeType: mimeType }, db);
+            console.log(`[Webhook] handleChatLogic finalizado com sucesso para: "${messageContent}"`);
+          } catch (logicErr: any) {
+            console.error(`[Webhook Erro Analítico] Falha ao processar a IA:`, logicErr?.message || logicErr);
+          }
         }
       }
-    } catch (error) {
-      console.error('[Webhook Error]:', error);
+
+      // Retorna 200 no final.
+      res.status(200).json({ received: true });
+    } catch (error: any) {
+      console.error('[Webhook Error Fatal]:', error?.message || error);
+      res.status(500).json({ error: 'Erro interno no webhook', details: error?.message });
     }
   });
 
