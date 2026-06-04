@@ -147,7 +147,10 @@ export default function App() {
           quantity: data.quantity,
           checked: data.checked,
           date: data.date || '',
-          concluded: !!data.concluded
+          concluded: !!data.concluded,
+          price: data.price || 0,
+          source: data.source || 'manual',
+          receiptId: data.receiptId
         } as ShoppingItem);
       });
       setShoppingItems(itemsList);
@@ -191,7 +194,7 @@ export default function App() {
   }, []);
 
   // 2. Shopping List Actions synced to Cloud Firestore
-  const handleAddShoppingItem = useCallback(async (name: string, category: string, quantity: number, date?: string) => {
+  const handleAddShoppingItem = useCallback(async (name: string, category: string, quantity: number, price?: number) => {
     const itemId = `shop-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
     
     // Normalize category to standard title-case form
@@ -209,7 +212,8 @@ export default function App() {
       quantity,
       checked: false,
       date: '', // No date initially
-      concluded: false
+      concluded: false,
+      price: price || 0
     };
 
     try {
@@ -351,6 +355,37 @@ export default function App() {
     });
   }, [shoppingItems, showNotification]);
 
+  const handleConcludeReceipts = useCallback(async () => {
+    const receiptsToConclude = shoppingItems.filter(item => !item.concluded && item.source === 'receipt');
+    if (receiptsToConclude.length === 0) {
+      showNotification('Nenhum cupom pendente para concluir!');
+      return;
+    }
+
+    setConfirmModal({
+      isOpen: true,
+      title: 'Confirmar Cupom Fiscal',
+      description: `Tem certeza de que deseja confirmar e salvar ${receiptsToConclude.length} item(ns) do cupom fiscal? Eles sairão desta aba e serão salvos no histórico.`,
+      confirmText: 'Confirmar Cupom',
+      type: 'warning',
+      onConfirm: async () => {
+        try {
+          const todayStr = new Date().toISOString().split('T')[0];
+          await Promise.all(receiptsToConclude.map(item => 
+            updateDoc(doc(db, 'shopping_items', item.id), { 
+              concluded: true,
+              date: item.date || todayStr
+            })
+          ));
+          showNotification('Cupom fiscal confirmado com sucesso! 🎉');
+        } catch (err) {
+          console.error(err);
+          showNotification('Erro ao confirmar cupom na Nuvem.');
+        }
+      }
+    });
+  }, [shoppingItems, showNotification]);
+
   // 3. Bills Tracker Actions synced to Cloud Firestore
   const handleAddBill = useCallback(async (type: BillType, value: number, dueDate: string, customTitle?: string, paid = false) => {
     const billMonth = dueDate.substring(0, 7); // "YYYY-MM"
@@ -481,27 +516,6 @@ export default function App() {
           </div>
 
           <div className="flex flex-wrap items-center gap-3">
-            {(activeAppTab === 'shopping' || activeAppTab === 'bills') && (
-              <>
-                <button
-                  onClick={() => setIsSheetsModalOpen(true)}
-                  className="inline-flex items-center gap-2 px-3.5 py-2.5 text-xs font-bold text-emerald-600 hover:text-emerald-500 bg-emerald-500/10 hover:bg-emerald-500/20 active:bg-emerald-500/30 rounded-xl transition-all cursor-pointer shadow-sm select-none border border-emerald-500/20"
-                  title="Sincronizar com Planilha Google Sheets"
-                >
-                  <RefreshCw size={13} />
-                  <span>Sincronizar Google Sheets</span>
-                </button>
-                <button
-                  onClick={() => setIsAssistantModalOpen(true)}
-                  className="inline-flex items-center gap-2 px-3.5 py-2.5 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 rounded-xl transition-all cursor-pointer shadow-sm select-none"
-                  title="Conversar com Assistente IA"
-                >
-                  <MessageSquare size={13} className="text-white" />
-                  <span>Assistente IA</span>
-                </button>
-              </>
-            )}
-
             <button
               onClick={() => setTheme(curr => curr === 'dark' ? 'light' : 'dark')}
               className="inline-flex items-center gap-2 px-3.5 py-2.5 text-xs font-bold text-[var(--text-sub)] hover:text-[var(--text-main)] bg-[var(--bg-card)] border border-[var(--border-card)] rounded-xl hover:bg-[var(--bg-input-hover)] transition-all cursor-pointer shadow-sm select-none"
@@ -569,6 +583,7 @@ export default function App() {
               onClearList={handleClearShoppingList}
               onMarkAllAsChecked={handleMarkAllShopping}
               onConcludePurchase={handleConcludePurchase}
+              onConcludeReceipts={handleConcludeReceipts}
             />
           </div>
         )}

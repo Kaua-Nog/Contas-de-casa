@@ -6,6 +6,9 @@ export interface ShoppingItem {
   checked: boolean;
   date?: string; // Format: "YYYY-MM-DD"
   concluded?: boolean;
+  price?: number;
+  source?: 'receipt' | 'manual';
+  receiptId?: string; // Group ID for receipts
 }
 
 export type BillType = 'agua' | 'energia' | 'racao_gatos' | 'racao_cachorro' | 'outros';

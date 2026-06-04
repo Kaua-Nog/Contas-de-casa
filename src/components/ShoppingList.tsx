@@ -21,13 +21,14 @@ import { db } from '../firebase';
 interface ShoppingListProps {
   items: ShoppingItem[];
   currentMonth: string;
-  onAddItem: (name: string, category: string, quantity: number, date?: string) => void;
+  onAddItem: (name: string, category: string, quantity: number, price?: number) => void;
   onToggleItem: (id: string) => void;
   onUpdateQuantity: (id: string, change: number) => void;
   onRemoveItem: (id: string) => void;
   onClearList: () => void;
   onMarkAllAsChecked: (checked: boolean) => void;
   onConcludePurchase: () => void;
+  onConcludeReceipts?: () => void;
 }
 
 const CATEGORIES = [
@@ -62,13 +63,15 @@ const ShoppingList = React.memo(function ShoppingList({
   onRemoveItem,
   onClearList,
   onMarkAllAsChecked,
-  onConcludePurchase
+  onConcludePurchase,
+  onConcludeReceipts
 }: ShoppingListProps) {
   const [newItemName, setNewItemName] = useState('');
   const [newItemQty, setNewItemQty] = useState(1);
+  const [newItemPrice, setNewItemPrice] = useState<string>('');
   const [selectedCategory, setSelectedCategory] = useState('Alimentos');
   const [searchFilter, setSearchFilter] = useState('');
-  const [activeTab, setActiveTab] = useState<'all' | 'pending' | 'checked'>('all');
+  const [activeTab, setActiveTab] = useState<'all' | 'pending' | 'checked' | 'receipt'>('all');
   const [isGrouped, setIsGrouped] = useState(false);
 
   // Expanded Item State (Accordion Click on Name)
@@ -151,9 +154,12 @@ const ShoppingList = React.memo(function ShoppingList({
     e.preventDefault();
     if (!newItemName.trim()) return;
 
-    onAddItem(newItemName.trim(), selectedCategory, newItemQty);
+    const parsedPrice = newItemPrice ? parseFloat(newItemPrice.replace(',', '.')) : 0;
+    
+    onAddItem(newItemName.trim(), selectedCategory, newItemQty, isNaN(parsedPrice) ? 0 : parsedPrice);
     setNewItemName('');
     setNewItemQty(1);
+    setNewItemPrice('');
   };
 
   const handleQuickAdd = (name: string, category: string) => {
@@ -173,8 +179,15 @@ const ShoppingList = React.memo(function ShoppingList({
       if (!matchesSearch) return false;
 
       // 2. Filter by status tab
-      if (activeTab === 'pending' && item.checked) return false;
-      if (activeTab === 'checked' && !item.checked) return false;
+      if (activeTab === 'pending') {
+        if (item.checked || item.source === 'receipt') return false;
+      }
+      if (activeTab === 'checked') {
+        if (!item.checked || item.source === 'receipt') return false;
+      }
+      if (activeTab === 'receipt') {
+        if (item.source !== 'receipt') return false;
+      }
 
       return true;
     });
@@ -202,7 +215,7 @@ const ShoppingList = React.memo(function ShoppingList({
         {/* Form add item */}
         <form onSubmit={handleSubmit} className="space-y-3" id="shopping-add-form">
           <div className="grid grid-cols-1 sm:grid-cols-12 gap-2">
-            <div className="sm:col-span-5 relative">
+            <div className="sm:col-span-4 relative">
               <input
                 type="text"
                 placeholder="Ex: Arroz, Leite, Detergente..."
@@ -213,7 +226,7 @@ const ShoppingList = React.memo(function ShoppingList({
                 required
               />
             </div>
-            <div className="sm:col-span-3">
+            <div className="sm:col-span-2">
               <select
                 value={selectedCategory}
                 onChange={(e) => setSelectedCategory(e.target.value)}
@@ -223,6 +236,15 @@ const ShoppingList = React.memo(function ShoppingList({
                   <option key={cat.id} value={cat.id} className="bg-[var(--bg-card)] text-[var(--text-body)]">{cat.label}</option>
                 ))}
               </select>
+            </div>
+            <div className="sm:col-span-2">
+              <input
+                type="text"
+                placeholder="R$ 0,00"
+                value={newItemPrice}
+                onChange={(e) => setNewItemPrice(e.target.value)}
+                className="w-full px-3 py-3 rounded-xl border border-[var(--border-input)] bg-[var(--bg-input)] shadow-xs focus:outline-hidden text-sm text-[var(--text-main)] placeholder:text-[var(--text-sub)]/50 focus:ring-2 focus:ring-indigo-500/10 focus:border-indigo-500 transition-all font-medium"
+              />
             </div>
             <div className="sm:col-span-2 flex items-center bg-[var(--bg-input)] border border-[var(--border-input)] rounded-xl px-1 py-1 h-12 shadow-xs">
               <button
@@ -374,6 +396,16 @@ const ShoppingList = React.memo(function ShoppingList({
               }`}
             >
               No Carrinho
+            </button>
+            <button
+              onClick={() => setActiveTab('receipt')}
+              className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all cursor-pointer ${
+                activeTab === 'receipt' 
+                  ? 'bg-blue-600 text-white shadow-xs' 
+                  : 'text-[var(--text-sub)] hover:text-[var(--text-body)] hover:bg-[var(--bg-input-hover)]/40'
+              }`}
+            >
+              Cupom Fiscal
             </button>
           </div>
         </div>
@@ -620,7 +652,12 @@ const ShoppingList = React.memo(function ShoppingList({
                               </div>
 
                               {/* Quantity controls & Delete */}
-                              <div className="flex items-center gap-3">
+                              <div className="flex flex-col items-end gap-1.5 sm:flex-row sm:items-center sm:gap-3">
+                                {item.price ? (
+                                  <span className="text-[9px] sm:text-[10px] font-mono font-bold bg-emerald-500/10 text-emerald-500 border border-emerald-500/20 px-1.5 py-0.5 rounded-sm whitespace-nowrap">
+                                    {item.quantity && item.quantity > 1 ? `${item.quantity}x R$ ${item.price.toFixed(2).replace('.', ',')} = R$ ${(item.price * item.quantity).toFixed(2).replace('.', ',')}` : `R$ ${item.price.toFixed(2).replace('.', ',')}`}
+                                  </span>
+                                ) : null}
                                 {/* Quantity counters */}
                                 <div className="flex items-center border border-[var(--border-input)] rounded-lg p-0.5 bg-[var(--bg-card)]">
                                   <button
@@ -786,7 +823,12 @@ const ShoppingList = React.memo(function ShoppingList({
                         </div>
 
                         {/* Quantity controls & Delete */}
-                        <div className="flex items-center gap-3">
+                        <div className="flex flex-col items-end gap-1.5 sm:flex-row sm:items-center sm:gap-3">
+                          {item.price ? (
+                            <span className="text-[9px] sm:text-[10px] font-mono font-bold bg-emerald-500/10 text-emerald-500 border border-emerald-500/20 px-1.5 py-0.5 rounded-sm whitespace-nowrap">
+                              {item.quantity && item.quantity > 1 ? `${item.quantity}x R$ ${item.price.toFixed(2).replace('.', ',')} = R$ ${(item.price * item.quantity).toFixed(2).replace('.', ',')}` : `R$ ${item.price.toFixed(2).replace('.', ',')}`}
+                            </span>
+                          ) : null}
                           {/* Quantity counters */}
                           <div className="flex items-center border border-[var(--border-input)] rounded-lg p-0.5 bg-[var(--bg-card)]">
                             <button
@@ -842,17 +884,51 @@ const ShoppingList = React.memo(function ShoppingList({
                 </button>
               </div>
             )}
+
+            {/* Action card with "Confirmar Cupom" at the end of receipt list */}
+            {activeTab === 'receipt' && filteredItems.length > 0 && onConcludeReceipts && (
+              <div className="mt-5 p-4 rounded-2xl border border-blue-500/20 bg-blue-500/5 flex flex-col items-center justify-center gap-2">
+                <p className="text-[11px] font-bold text-blue-400 text-center tracking-wide uppercase">
+                  Pronto para confirmar o cupom? Você tem {filteredItems.length} item(ns) pendentes.
+                </p>
+                <button
+                  type="button"
+                  onClick={onConcludeReceipts}
+                  className="w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 text-xs font-extrabold text-white bg-blue-600 hover:bg-blue-700 active:bg-blue-800 rounded-xl transition-all shadow-md cursor-pointer uppercase tracking-wider"
+                >
+                  <ShoppingCart size={13} className="animate-bounce" />
+                  Confirmar Cupom
+                </button>
+              </div>
+            )}
           </div>
         )}
       </div>
 
        {/* Footer Totals */}
       <div className="p-4 border-t border-[var(--border-card)] bg-[var(--bg-card)]" id="shopping-totals-footer">
-        <div className="mb-3 p-3 bg-[var(--bg-input)] rounded-xl border border-[var(--border-card)] flex items-center justify-between">
-          <span className="text-xs font-bold text-[var(--text-sub)]">Checklist do Carrinho</span>
-          <span className="text-xs font-extrabold px-2.5 py-1 bg-emerald-500/10 text-emerald-400 rounded-md">
-            {filteredItems.filter(i => i.checked).length} de {filteredItems.length} itens inclusos
-          </span>
+        <div className="mb-3 p-3 bg-[var(--bg-input)] rounded-xl border border-[var(--border-card)] flex flex-col gap-2">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-bold text-[var(--text-sub)]">Checklist da Seleção</span>
+            <span className="text-xs font-extrabold px-2.5 py-1 bg-emerald-500/10 text-emerald-400 rounded-md">
+              {filteredItems.filter(i => i.checked).length} de {filteredItems.length} itens
+            </span>
+          </div>
+          {(() => {
+             const itemsWithPrice = filteredItems.filter(i => (i.price || 0) > 0);
+             if (itemsWithPrice.length > 0) {
+               const totalVal = filteredItems.reduce((acc, i) => acc + ((i.price || 0) * (i.quantity || 1)), 0);
+               return (
+                 <div className="flex items-center justify-between mt-1 pt-2 border-t border-[var(--border-card)] border-dashed">
+                    <span className="text-xs font-bold text-[var(--text-sub)]">Valor Total (estimado):</span>
+                    <span className="text-sm font-extrabold font-mono text-emerald-500">
+                      R$ {totalVal.toFixed(2).replace('.', ',')}
+                    </span>
+                 </div>
+               );
+             }
+             return null;
+          })()}
         </div>
 
         <div className="flex flex-col gap-2">
@@ -864,6 +940,16 @@ const ShoppingList = React.memo(function ShoppingList({
             >
               <ShoppingCart size={14} className="animate-bounce" />
               Concluir Compra
+            </button>
+          )}
+
+          {activeTab === 'receipt' && filteredItems.length > 0 && onConcludeReceipts && (
+            <button
+              onClick={onConcludeReceipts}
+              className="w-full inline-flex items-center justify-center gap-2 px-4 py-3 text-sm font-bold text-white bg-blue-600 hover:bg-blue-700 active:bg-blue-800 rounded-xl transition-all shadow-md cursor-pointer mb-1 uppercase tracking-wider"
+            >
+              <ShoppingCart size={14} className="animate-bounce" />
+              Confirmar Cupom
             </button>
           )}
 

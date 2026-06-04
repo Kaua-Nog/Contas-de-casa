@@ -12,7 +12,10 @@ import {
   PieChart,
   ShoppingBag,
   Sparkles,
-  FileDown
+  FileDown,
+  ChevronUp,
+  ChevronDown,
+  X
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { jsPDF } from 'jspdf';
@@ -25,9 +28,10 @@ interface MonthlyChartProps {
 
 const MonthlyChart = React.memo(function MonthlyChart({ bills, currentMonth, shoppingItems = [] }: MonthlyChartProps) {
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
-  const [activeTab, setActiveTab] = useState<'costs' | 'shopping'>('costs');
+  const [activeTab, setActiveTab] = useState<'costs' | 'shopping' | 'shopping-history'>('costs');
   const [hoveredSlice, setHoveredSlice] = useState<number | null>(null);
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
+  const [selectedReceipt, setSelectedReceipt] = useState<any>(null);
 
   // Shopping Dashboard Period States
   const [periodOption, setPeriodOption] = useState<'all' | 'today' | 'this-month' | 'custom'>('this-month');
@@ -288,6 +292,123 @@ const MonthlyChart = React.memo(function MonthlyChart({ bills, currentMonth, sho
   const maxCostValue = costsByCategory.length > 0 ? costsByCategory[0].value : 1;
 
 
+  // --- TAB: SHOPPING HISTORY (6 MONTHS BAR CHART) ---
+  const shoppingChartData = useMemo(() => {
+    return monthsToDisplay.map(mStr => {
+      const mItems = shoppingItems.filter(i => (i.checked || i.concluded) && i.date?.startsWith(mStr));
+      const spent = mItems.reduce((sum, i) => sum + ((i.price || 0) * (i.quantity || 1)), 0);
+      return {
+        month: mStr,
+        monthName: getMonthLabel(mStr),
+        spent,
+        total: spent
+      };
+    });
+  }, [shoppingItems, monthsToDisplay]);
+
+  const maxShoppingTotal = Math.max(...shoppingChartData.map(d => d.total), 50);
+  const [selectedShoppingMonth, setSelectedShoppingMonth] = useState<string>(currentMonth);
+  const activeShoppingMonthStr = hoveredIndex !== null ? shoppingChartData[hoveredIndex]?.month : selectedShoppingMonth;
+  
+  const activeMonthShoppingItems = useMemo(() => {
+    return shoppingItems.filter(i => (i.checked || i.concluded) && i.date?.startsWith(activeShoppingMonthStr));
+  }, [shoppingItems, activeShoppingMonthStr]);
+  
+  const activeMonthShoppingTotal = activeMonthShoppingItems.reduce((sum, i) => sum + ((i.price || 0) * (i.quantity || 1)), 0);
+
+  const receiptsGrouped = useMemo(() => {
+    const groups: Record<string, typeof activeMonthShoppingItems> = {};
+    const standalone: typeof activeMonthShoppingItems = [];
+
+    activeMonthShoppingItems.forEach(item => {
+      if (item.receiptId) {
+        if (!groups[item.receiptId]) groups[item.receiptId] = [];
+        groups[item.receiptId].push(item);
+      } else {
+        standalone.push(item);
+      }
+    });
+
+    const receiptsList = Object.entries(groups).map(([id, items]) => {
+      // Try to extract timestamp from receiptId (e.g. "receipt-161500518592")
+      let dateObj = new Date();
+      if (id.startsWith('receipt-')) {
+        const ts = parseInt(id.replace('receipt-', ''));
+        if (!isNaN(ts)) dateObj = new Date(ts);
+      }
+      
+      const formattedDate = dateObj.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' });
+      const formattedTime = dateObj.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+      
+      return {
+        id,
+        title: `Comanda de ${formattedDate} às ${formattedTime}`,
+        sortTime: dateObj.getTime(),
+        items,
+        total: items.reduce((sum, i) => sum + ((i.price || 0) * (i.quantity || 1)), 0)
+      };
+    }).sort((a, b) => b.sortTime - a.sortTime); // newest first
+    
+    // Group standalone by date
+    const standaloneByDate: Record<string, typeof activeMonthShoppingItems> = {};
+    standalone.forEach(item => {
+      const dt = item.date || 'Desconhecido';
+      if (!standaloneByDate[dt]) standaloneByDate[dt] = [];
+      standaloneByDate[dt].push(item);
+    });
+    
+    const standaloneList = Object.entries(standaloneByDate).map(([dt, items]) => ({
+      id: `standalone-${dt}`,
+      title: dt !== 'Desconhecido' ? `Itens Individuais - ${dt.split('-').reverse().join('/')}` : 'Itens Individuais',
+      sortTime: dt !== 'Desconhecido' ? new Date(dt).getTime() : 0,
+      items,
+      total: items.reduce((sum, i) => sum + ((i.price || 0) * (i.quantity || 1)), 0)
+    })).sort((a, b) => b.sortTime - a.sortTime);
+
+    return [...receiptsList, ...standaloneList];
+  }, [activeMonthShoppingItems]);
+
+  const comparativeCategoryData = useMemo(() => {
+    const [yearStr, monthStr] = activeShoppingMonthStr.split('-');
+    let currYear = parseInt(yearStr);
+    let currMonth = parseInt(monthStr);
+
+    let prevMonth = currMonth - 1;
+    let prevYear = currYear;
+    if (prevMonth < 1) {
+      prevMonth = 12;
+      prevYear -= 1;
+    }
+    const prevMonthStr = `${prevYear}-${prevMonth.toString().padStart(2, '0')}`;
+
+    const prevMonthItems = shoppingItems.filter(i => (i.checked || i.concluded) && i.date?.startsWith(prevMonthStr));
+
+    const currTotals: Record<string, number> = {};
+    const prevTotals: Record<string, number> = {};
+    const allCategories = new Set<string>();
+
+    activeMonthShoppingItems.forEach(i => {
+      const cat = i.category || 'Outros';
+      currTotals[cat] = (currTotals[cat] || 0) + ((i.price || 0) * (i.quantity || 1));
+      allCategories.add(cat);
+    });
+
+    prevMonthItems.forEach(i => {
+      const cat = i.category || 'Outros';
+      prevTotals[cat] = (prevTotals[cat] || 0) + ((i.price || 0) * (i.quantity || 1));
+      allCategories.add(cat);
+    });
+
+    return Array.from(allCategories).map(cat => ({
+      category: cat,
+      current: currTotals[cat] || 0,
+      previous: prevTotals[cat] || 0
+    })).sort((a, b) => b.current - a.current);
+  }, [activeMonthShoppingItems, shoppingItems, activeShoppingMonthStr]);
+
+  const maxComparativeValue = Math.max(...comparativeCategoryData.map(c => Math.max(c.current, c.previous)), 1);
+
+
 
   // --- TAB: INTEGRATED SHOPPING LIST PIE-CHART ---
   const activePurchasedItems = useMemo(() => {
@@ -310,21 +431,23 @@ const MonthlyChart = React.memo(function MonthlyChart({ bills, currentMonth, sho
     });
   }, [shoppingItems, periodOption, currentMonth, startDate, endDate]);
 
-  const categories = ['Alimentos', 'Bebidas', 'Limpeza', 'Higiene', 'Outros'];
-  const categoryTotals = categories.map(cat => {
-    const items = activePurchasedItems.filter(item => (item.category || '').trim().toLowerCase() === cat.trim().toLowerCase());
-    const totalQty = items.reduce((sum, item) => sum + item.quantity, 0);
-    return {
-      name: cat,
-      value: totalQty,
-      color: cat.toLowerCase() === 'alimentos' ? 'var(--color-alimentos)' : // Adaptive Sky blue
-             cat.toLowerCase() === 'bebidas' ? 'var(--color-bebidas)' :    // Adaptive Purple
-             cat.toLowerCase() === 'limpeza' ? 'var(--color-limpeza)' :    // Adaptive Teal
-             cat.toLowerCase() === 'higiene' ? 'var(--color-higiene)' :    // Adaptive Pink
-             'var(--color-outros)',                         // Adaptive Slate
-      itemCount: items.length
-    };
-  }).filter(c => c.value > 0);
+  const categoryTotals = useMemo(() => {
+    const categories = ['Alimentos', 'Bebidas', 'Limpeza', 'Higiene', 'Outros'];
+    return categories.map(cat => {
+      const items = activePurchasedItems.filter(item => (item.category || '').trim().toLowerCase() === cat.trim().toLowerCase());
+      const totalQty = items.reduce((sum, item) => sum + item.quantity, 0);
+      return {
+        name: cat,
+        value: totalQty,
+        color: cat.toLowerCase() === 'alimentos' ? 'var(--color-alimentos)' : // Adaptive Sky blue
+               cat.toLowerCase() === 'bebidas' ? 'var(--color-bebidas)' :    // Adaptive Purple
+               cat.toLowerCase() === 'limpeza' ? 'var(--color-limpeza)' :    // Adaptive Teal
+               cat.toLowerCase() === 'higiene' ? 'var(--color-higiene)' :    // Adaptive Pink
+               'var(--color-outros)',                         // Adaptive Slate
+        itemCount: items.length
+      };
+    }).filter(c => c.value > 0);
+  }, [activePurchasedItems]);
 
   const totalShoppingQty = categoryTotals.reduce((sum, c) => sum + c.value, 0);
 
@@ -407,6 +530,16 @@ const MonthlyChart = React.memo(function MonthlyChart({ bills, currentMonth, sho
               Custos
             </button>
             <button
+              onClick={() => setActiveTab('shopping-history')}
+              className={`px-3.5 py-1.5 text-xs font-bold rounded-lg transition-all cursor-pointer flex items-center gap-1 ${
+                activeTab === 'shopping-history' 
+                  ? 'bg-[var(--bg-input-hover)] text-[var(--text-main)] shadow-2xs' 
+                  : 'text-[var(--text-sub)] hover:text-[var(--text-main)]'
+              }`}
+            >
+              Compras no Mercado
+            </button>
+            <button
               onClick={() => setActiveTab('shopping')}
               className={`px-3.5 py-1.5 text-xs font-bold rounded-lg transition-all cursor-pointer flex items-center gap-1 ${
                 activeTab === 'shopping' 
@@ -415,7 +548,7 @@ const MonthlyChart = React.memo(function MonthlyChart({ bills, currentMonth, sho
               }`}
             >
               <PieChart size={12} />
-              Dashboard
+              Insight Produtos
             </button>
           </div>
         </div>
@@ -547,6 +680,171 @@ const MonthlyChart = React.memo(function MonthlyChart({ bills, currentMonth, sho
                     })
                   )}
                 </div>
+              </div>
+            </div>
+          </motion.div>
+        ) : activeTab === 'shopping-history' ? (
+          <motion.div
+            key="shopping-history-tab"
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -10 }}
+            transition={{ duration: 0.15 }}
+            className="flex-1 flex flex-col"
+          >
+            {/* SVG Interactive Chart Canvas */}
+            <div className="relative pt-6 pb-2 mb-4" id="svg-chart-container-shopping">
+              {hoveredIndex !== null && (
+                <div className="absolute top-0 left-0 right-0 mx-auto bg-[var(--bg-card)] border border-[var(--border-input)] text-[var(--text-main)] rounded-xl py-1.5 px-3.5 shadow-md flex justify-between items-center text-xs max-w-sm transition-all z-35">
+                  <span className="font-bold text-[11px] uppercase tracking-wide">{shoppingChartData[hoveredIndex].monthName} / {shoppingChartData[hoveredIndex].month.split('-')[0]}</span>
+                  <div className="flex items-center gap-3 font-mono">
+                    <span className="text-[var(--text-sub)]">Total: <b className="text-blue-400">R${shoppingChartData[hoveredIndex].spent.toFixed(0)}</b></span>
+                  </div>
+                </div>
+              )}
+
+              <div className="w-full flex items-end justify-between h-[180px] px-2 mb-2">
+                {shoppingChartData.map((item, index) => {
+                  const spentPct = (item.spent / maxShoppingTotal) * 100;
+                  const isCurrent = item.month === currentMonth;
+
+                  return (
+                    <div 
+                      key={item.month} 
+                      className={`flex-1 flex flex-col items-center group cursor-pointer ${item.month === selectedShoppingMonth ? 'opacity-100' : 'opacity-80 hover:opacity-100'}`}
+                      onMouseEnter={() => setHoveredIndex(index)}
+                      onMouseLeave={() => setHoveredIndex(null)}
+                      onClick={() => setSelectedShoppingMonth(item.month)}
+                    >
+                      <div className="w-full flex justify-center items-end h-[150px] relative">
+                        {/* Grid Lines */}
+                        <div className="absolute left-0 right-0 w-full h-[1px] bg-[var(--border-card)] bottom-1/4 -z-5 pointer-events-none opacity-40"></div>
+                        <div className="absolute left-0 right-0 w-full h-[1px] bg-[var(--border-card)] bottom-2/4 -z-5 pointer-events-none opacity-40"></div>
+                        <div className="absolute left-0 right-0 w-full h-[1px] bg-[var(--border-card)] bottom-3/4 -z-5 pointer-events-none opacity-40"></div>
+
+                        {/* Stacking Bars */}
+                        <div className="w-[32px] sm:w-[42px] flex flex-col justify-end h-full relative rounded-t-lg overflow-hidden transition-all group-hover:shadow-xs group-hover:brightness-110">
+                          <div 
+                            style={{ height: `${spentPct}%` }} 
+                            className="bg-blue-500 transition-all duration-300"
+                          ></div>
+                        </div>
+                      </div>
+
+                      {/* X Axis Label */}
+                      <span className={`mt-3 text-[10px] sm:text-xs font-bold font-mono transition-colors ${
+                        isCurrent ? 'text-indigo-500 font-extrabold bg-indigo-500/10 px-2 py-0.5 rounded-sm' : 'text-[var(--text-sub)] group-hover:text-[var(--text-main)]'
+                      }`}>
+                        {item.monthName}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Legend and Info Metrics */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-auto border-t border-[var(--border-card)] pt-5 bg-[var(--bg-card)]">
+              <div className="flex flex-col justify-start">
+                <span className="text-[11px] font-extrabold text-[var(--text-sub)] uppercase tracking-wider block mb-3">Legenda do Mercado</span>
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between p-2.5 rounded-xl border border-blue-500/20 bg-blue-500/5">
+                    <div className="flex items-center gap-2.5">
+                      <span className="w-3.5 h-3.5 rounded-sm bg-blue-500 block shadow-2xs"></span>
+                      <span className="text-xs font-bold text-[var(--text-body)]">Total Gasto</span>
+                    </div>
+                  </div>
+                </div>
+                <div className="mt-4 text-[10px] text-[var(--text-sub)] flex items-center gap-1 font-medium">
+                  <Info size={12} className="text-indigo-400" />
+                  <span>Clique nas colunas para ver os gastos detalhados por categoria.</span>
+                </div>
+              </div>
+
+              <div className="flex flex-col border border-[var(--border-card)] rounded-2xl bg-[var(--bg-input)]/40 p-4 relative" style={{ minHeight: '180px' }}>
+                <div className="flex items-center justify-between mb-3 border-b border-[var(--border-card)] pb-2 z-10 sticky top-0 bg-[var(--bg-card)]">
+                  <span className="text-[11px] font-extrabold text-[var(--text-main)] uppercase tracking-wider">
+                    {getMonthLabel(activeShoppingMonthStr)} / {activeShoppingMonthStr.split('-')[0]}
+                  </span>
+                  <span className="text-xs font-mono font-bold text-blue-400">R$ {activeMonthShoppingTotal.toFixed(2)}</span>
+                </div>
+                
+                <div className="flex-1 space-y-2 overflow-y-auto pr-1" style={{ maxHeight: '140px' }}>
+                  {receiptsGrouped.length === 0 ? (
+                    <div className="text-center font-bold text-xs py-4 text-[var(--text-sub)]">
+                      Nenhuma compra neste mês.
+                    </div>
+                  ) : (
+                    receiptsGrouped.map((group) => {
+                      return (
+                        <div key={group.id} className="flex flex-col border border-[var(--border-card)] rounded-xl bg-[var(--bg-card)] overflow-hidden transition-all duration-300">
+                          <button
+                            onClick={() => setSelectedReceipt(group)}
+                            className="flex items-center justify-between p-2.5 hover:bg-[var(--bg-input-hover)] transition-colors cursor-pointer w-full text-left"
+                          >
+                            <div className="flex flex-col gap-0.5">
+                              <span className="text-xs font-bold text-[var(--text-main)] truncate">{group.title}</span>
+                              <span className="text-[10px] text-[var(--text-sub)]">{group.items.length} item(ns)</span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <span className="font-mono text-xs font-bold text-blue-400 whitespace-nowrap">R$ {group.total.toFixed(2)}</span>
+                              <ChevronDown size={14} className="text-[var(--text-sub)] -rotate-90"/>
+                            </div>
+                          </button>
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Comparative Breakdown */}
+            <div className="mt-5 border-t border-[var(--border-card)] pt-5 mb-4">
+              <div className="mb-4 flex items-center justify-between">
+                <span className="text-[11px] font-extrabold text-[var(--text-sub)] uppercase tracking-wider block">Gasto por Categoria (Comparativo)</span>
+                <span className="text-[9px] font-bold text-[var(--text-main)] bg-[var(--bg-input)] px-2 py-0.5 rounded border border-[var(--border-input)] uppercase tracking-wide">
+                  Mês Atual vs. Anterior
+                </span>
+              </div>
+              
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-4">
+                {comparativeCategoryData.length === 0 ? (
+                  <div className="col-span-full text-center font-bold text-xs py-4 text-[var(--text-sub)]">
+                    Sem gastos para exibir.
+                  </div>
+                ) : (
+                  comparativeCategoryData.map(cat => {
+                    const currPct = (cat.current / maxComparativeValue) * 100;
+                    const prevPct = (cat.previous / maxComparativeValue) * 100;
+                    return (
+                      <div key={cat.category} className="flex flex-col gap-1.5 p-3 rounded-xl border border-[var(--border-card)] bg-[var(--bg-input)]/30">
+                        <div className="flex justify-between items-end mb-1">
+                          <span className="text-xs font-bold text-[var(--text-main)]">{cat.category}</span>
+                          <span className="text-[10px] font-mono text-[var(--text-sub)]">
+                            <span className="text-[var(--text-main)] font-bold">R$ {cat.current.toFixed(2)}</span>
+                            <span className="mx-1">vs</span>
+                            <span>R$ {cat.previous.toFixed(2)}</span>
+                          </span>
+                        </div>
+                        <div className="flex flex-col gap-1.5">
+                          <div className="flex items-center gap-2">
+                            <div className="w-12 shrink-0 text-[9px] font-bold text-blue-400 uppercase tracking-widest text-right pr-1 border-r border-[var(--border-card)]">Atual</div>
+                            <div className="flex-1 bg-[var(--bg-input)] h-2 rounded-full overflow-hidden">
+                              <div className="bg-blue-500 h-full rounded-full transition-all duration-500" style={{ width: `${currPct}%` }}></div>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <div className="w-12 shrink-0 text-[10px] font-medium text-[var(--text-sub)] text-right pr-1 border-r border-[var(--border-card)]">Anterior</div>
+                            <div className="flex-1 bg-[var(--bg-input)] h-2 rounded-full overflow-hidden">
+                              <div className="bg-[var(--text-sub)] h-full rounded-full transition-all duration-500 opacity-60" style={{ width: `${prevPct}%` }}></div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
               </div>
             </div>
           </motion.div>
@@ -829,6 +1127,58 @@ const MonthlyChart = React.memo(function MonthlyChart({ bills, currentMonth, sho
               </div>
             )}
           </motion.div>
+        )}
+      </AnimatePresence>
+      <AnimatePresence>
+        {selectedReceipt && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setSelectedReceipt(null)}
+              className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+            />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 15 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 10 }}
+              className="relative bg-[var(--bg-card)] rounded-3xl w-full max-w-sm max-h-[85vh] shadow-2xl border border-[var(--border-card)] flex flex-col overflow-hidden z-50"
+            >
+              <div className="flex items-center justify-between p-4 border-b border-[var(--border-card)] bg-[var(--bg-card)] shrink-0">
+                <div className="flex flex-col">
+                  <h3 className="font-bold text-sm text-[var(--text-main)] truncate max-w-[220px]">{selectedReceipt.title}</h3>
+                  <span className="text-[10px] uppercase text-[var(--text-sub)] tracking-wider mt-0.5">{selectedReceipt.items.length} item(ns)</span>
+                </div>
+                <button
+                  onClick={() => setSelectedReceipt(null)}
+                  className="p-1.5 hover:bg-[var(--bg-input-hover)] text-[var(--text-sub)] hover:text-[var(--text-main)] transition-colors rounded-xl cursor-pointer"
+                >
+                  <X size={16} />
+                </button>
+              </div>
+
+              <div className="flex-1 overflow-y-auto p-4 space-y-2 bg-[var(--bg-input)]/20">
+                {selectedReceipt.items.map((item: any, idx: number) => (
+                  <div key={item.id + idx} className="flex justify-between items-center bg-[var(--bg-card)] border border-[var(--border-card)] rounded-xl p-3 shadow-sm">
+                    <div className="flex flex-col">
+                      <span className="font-semibold text-xs text-[var(--text-main)]">{item.name}</span>
+                      <span className="text-[10px] text-[var(--text-sub)]">{item.category} • {item.quantity} un</span>
+                    </div>
+                    <div className="flex flex-col items-end text-right">
+                      <span className="font-mono font-bold text-xs text-[var(--text-body)]">R$ {((item.price || 0) * (item.quantity || 1)).toFixed(2)}</span>
+                      {(item.quantity || 1) > 1 && <span className="text-[9px] text-[var(--text-sub)] block mt-0.5">R$ {item.price?.toFixed(2)} / un</span>}
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              <div className="p-4 border-t border-[var(--border-card)] bg-[var(--bg-card)] shrink-0 flex items-center justify-between">
+                <span className="text-xs font-bold text-[var(--text-sub)] uppercase">Valor Total</span>
+                <span className="font-mono font-black text-lg text-emerald-400">R$ {selectedReceipt.total.toFixed(2)}</span>
+              </div>
+            </motion.div>
+          </div>
         )}
       </AnimatePresence>
     </div>

@@ -4,7 +4,7 @@ import fs from 'fs';
 import { createServer as createViteServer } from 'vite';
 import { GoogleGenAI, Type } from '@google/genai';
 import { initializeApp } from 'firebase/app';
-import { getFirestore, doc, setDoc, getDoc } from 'firebase/firestore';
+import { getFirestore, initializeFirestore, doc, setDoc, getDoc, collection, query, where, getDocs } from 'firebase/firestore';
 
 async function startServer() {
   const app = express();
@@ -17,7 +17,9 @@ async function startServer() {
     if (fs.existsSync(configPath)) {
       const firebaseConfig = JSON.parse(fs.readFileSync(configPath, 'utf8'));
       const firebaseApp = initializeApp(firebaseConfig);
-      db = getFirestore(firebaseApp, firebaseConfig.firestoreDatabaseId || undefined);
+      db = initializeFirestore(firebaseApp, {
+        experimentalForceLongPolling: true
+      }, firebaseConfig.firestoreDatabaseId || undefined);
       console.log('Firebase initialized successfully inside server.ts with databaseId: ', firebaseConfig.firestoreDatabaseId);
     } else {
       console.warn('firebase-applet-config.json not found inside server.ts!');
@@ -131,6 +133,39 @@ async function startServer() {
 
 
 
+  async function sendWhatsAppMessage(instance: string, jid: string, text: string) {
+    const url = process.env.EVOLUTION_API_URL;
+    const apiKey = process.env.EVOLUTION_API_KEY;
+    if (!url || !apiKey) {
+      console.warn('[Assistant Bot] Faltando EVOLUTION_API_URL ou EVOLUTION_API_KEY no .env, ignorando envio de resposta.');
+      return;
+    }
+    try {
+      const fetchUrl = `${url.replace(/\/$/, '')}/message/sendText/${instance}`;
+      const res = await fetch(fetchUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'apikey': apiKey
+        },
+        body: JSON.stringify({
+           number: jid,
+           options: {
+             delay: 1200,
+             presence: 'composing'
+           },
+           textMessage: {
+             text: text
+           }
+        })
+      });
+      const resText = await res.text();
+      console.log(`[Assistant Bot] Mensagem enviada via Evolution: ${res.status} - ${resText}`);
+    } catch(e) {
+      console.error(`[Assistant Bot] Falha ao enviar mensagem resposta via Evolution:`, e);
+    }
+  }
+
   // Core business logic handler for the Chat Assistant
   async function handleChatLogic(reqBody: any, db: any) {
     const apiKey = process.env.GEMINI_API_KEY;
@@ -181,7 +216,7 @@ async function startServer() {
         O usuário enviou uma FOTO de um boleto/conta de consumo OU cupom fiscal de compras realizadas.
         Analise a foto detalhadamente e identifique:
         
-        É uma conta residencial futura a pagar (água, energia/eletricidade, ração cães/gatos mensais, internet) ou um cupom de supermercado já pago com produtos comprados?
+        É uma conta residencial futura a pagar (água, energia/eletricidade, ração cães/gatos mensais, internet) ou um comprovante/cupom de supermercado com produtos já comprados?
         
         Se for uma conta/fatura a pagar, use a estrutura:
         - "intent": "bill"
@@ -189,21 +224,22 @@ async function startServer() {
             - "type": obrigatoriamente um entre: "agua", "energia", "racao_gatos", "racao_cachorro", "outros"
             - "customTitle": nome do fornecedor/emissor (máximo 30 caracteres, ex: "SABESP", "Enel", "PETZ", "Boleto Internet")
             - "value": valor numérico float da conta (ex: 135.90)
-            - "dueDate": data de vencimento no formato "YYYY-MM-DD". Hoje é 2026-06-01 (segunda-feira). Se encontrar somente dia/mês, assuma o ano corrente (2026).
+            - "dueDate": data de vencimento no formato "YYYY-MM-DD". Hoje é 2026-06-03. Se encontrar somente dia/mês, assuma o ano corrente (2026).
             
-        Se for um cupom fiscal de mercado com mercadorias, use a estrutura:
-        - "intent": "shopping"
+        Se for um comprovante/cupom fiscal de mercado com mercadorias já pagas, use a estrutura:
+        - "intent": "shopping_receipt"
         - "shoppingItems": array de objetos, onde cada um contém:
             - "name": nome descritivo do produto (ex: "Detergente Ypê", "Arroz Tio João 5kg")
-            - "quantity": unidade numérica (ex: 1, 3, etc.)
+            - "quantity": unidade numérica independente de medição (ex: para 1 bandeja de queijo pesado, coloque 1, e não o peso em kg).
             - "category": obrigatoriamente um entre: "Alimentos", "Bebidas", "Limpeza", "Higiene", "Outros"
+            - "price": o valor PAGO pela unidade deste produto. ***ATENÇÃO A PRODUTOS POR PESO (QUEIJO, CARNE, MORTADELA, UVA ETC)***: O 'price' deve ser o VALOR TOTAL EFETIVAMENTE PAGO POR AQUELE ITEM (MUITAS VEZES É A TERCEIRA OU ÚLTIMA COLUNA DA LINHA) e NUNCA o valor inteiro do Quilo. Por exemplo, se o Queijo custa 42,98/kg e comprou 9,37, a quantity deve ser 1 e o price deve ser 9.37. Nunca coloque o valor total de múltiplos produtos no campo unitário (divida se necessário).
 
         Retorne um JSON contendo a marcação apropriada e a resposta:
         - "assistantReplyText": Mensagem explicativa em português (Brasil) detalhando o que foi reconhecido com sucesso e lançado na Nuvem do Lar em Ordem.`
       };
 
       const response = await ai.models.generateContent({
-        model: 'gemini-3.1-flash-lite',
+        model: 'gemini-2.5-flash',
         contents: { parts: [inlinePart, imagePrompt] },
         config: {
           responseMimeType: 'application/json',
@@ -228,7 +264,8 @@ async function startServer() {
                   properties: {
                     name: { type: Type.STRING },
                     quantity: { type: Type.NUMBER },
-                    category: { type: Type.STRING }
+                    category: { type: Type.STRING },
+                    price: { type: Type.NUMBER }
                   },
                   required: ['name', 'quantity', 'category']
                 }
@@ -247,10 +284,11 @@ async function startServer() {
       const textPrompt = `Você é o assistente inteligente "Lar em Ordem" que lê um grupo do WhatsApp.
       Sua tarefa central é IDENTIFICAR O QUE É UM COMANDO VÁLIDO E O QUE É CONVERSA NORMAL.
       
-      Classifique a intenção do usuário em 3 categorias exatas:
+      Classifique a intenção do usuário em 4 categorias exatas:
       1) "bill": Comando claro para lançar/adicionar uma conta ou despesa, incluindo ração de animais ("ração", "racao do cachorro", "conta de água"). (Ex: "lançar conta Sabesp 50", "ração do cachorro 100")
       2) "shopping": Comando listando produtos ou pedindo para adicionar itens ao mercado/farmácia. (Ex: "colocar 3 sabonetes na lista", "detergente 1, arroz", "comprar: leite")
-      3) "fallback": QUALQUER outra coisa. Mensagens incompletas, chat normal, saudações ("bom dia", "tudo bem?", "me ajuda"), áudios não transcritos, PDFs etc. Você DEVE marcar como "fallback" se não for conta e nem lista de mercado.
+      3) "query_list": Usuário perguntando o que tem na lista de compras no momento (ex: "o que tem na lista?", "o que falta comprar?", "manda a lista").
+      4) "fallback": QUALQUER outra coisa. Mensagens incompletas, chat normal, saudações ("bom dia", "tudo bem?", "me ajuda"), áudios não transcritos, PDFs etc. Você DEVE marcar como "fallback" se não for conta, nem lista, nem consulta.
       
       Para 'shopping' (lista de compras):
          Extraia:
@@ -258,26 +296,27 @@ async function startServer() {
             - "name": nome do produto (ex: "Sabonete Dove")
             - "quantity": unidade numérica
             - "category": ("Alimentos", "Bebidas", "Limpeza", "Higiene", "Outros")
+            - "price": opcional, o valor caso informado (numérico).
             
       Para 'bill' (lançar conta da casa/despesa):
          Extraia:
          "bill": objeto contendo:
-            - "type": Classifique EXATAMENTE em um destes: "agua", "energia", "racao_gatos", "racao_cachorro", "outros". Se falar "água", "conta de água", é "agua". Se falar "ração do cachorro" ou "ração cachorro", é "racao_cachorro".
-            - "customTitle": O nome amigável/fornecedor (ex: se "agua", coloque "Sabesp" ou "CAERN" se citado, se não, só "Conta de Água". Se "racao_cachorro", coloque "Ração do cachorro").
+            - "type": Classifique EXATAMENTE em um destes: "agua", "energia", "racao_gatos", "racao_cachorro", "outros".
+            - "customTitle": O nome amigável/fornecedor.
             - "value": float do valor (ex: para "100 reais" use 100.0). Se o valor não for especificado, coloque 0.
             - "dueDate": Data no formato "YYYY-MM-DD". Se não for dito o dia, use a data de hoje. Se apenas o mês e dia for dito, use o ano atual. Hoje é ${new Date().toISOString().split('T')[0]}.
             
-      Para 'fallback' (Conversa normal):
+      Para 'fallback' e 'query_list':
          Não adicione arrays nem objetos extrínsecos.
 
       Retorne APENAS um JSON válido contendo:
-      - "intent": "bill" | "shopping" | "fallback"
-      - "assistantReplyText": Se for 'fallback', escreva exatamente "[Ignorado] Conversa normal.". Se for válido, crie um resumo curto do que foi detectado.
+      - "intent": "bill" | "shopping" | "query_list" | "fallback"
+      - "assistantReplyText": Se for 'fallback', escreva exatamente "[Ignorado] Conversa normal.". Se for válido, crie um resumo curto do que foi detectado ou uma resposta proativa.
       
       \nMensagem do usuário: "${incomingText}"`;
 
       const response = await ai.models.generateContent({
-        model: 'gemini-3.1-flash-lite',
+        model: 'gemini-2.5-flash',
         contents: textPrompt,
         config: {
           responseMimeType: 'application/json',
@@ -302,7 +341,8 @@ async function startServer() {
                   properties: {
                     name: { type: Type.STRING },
                     quantity: { type: Type.NUMBER },
-                    category: { type: Type.STRING }
+                    category: { type: Type.STRING },
+                    price: { type: Type.NUMBER }
                   },
                   required: ['name', 'quantity', 'category']
                 }
@@ -319,8 +359,45 @@ async function startServer() {
 
     if (db) {
       try {
-        if (parsedResult.intent === 'shopping' && parsedResult.shoppingItems && parsedResult.shoppingItems.length > 0) {
+        if (parsedResult.intent === 'query_list') {
+          console.log(`[Assistant Bot] Consultando lista de compras...`);
+          const shopCol = collection(db, 'shopping_items');
+          const qFilter = query(shopCol, where('concluded', '==', false));
+          const snap = await getDocs(qFilter);
+          const items = snap.docs.map(doc => doc.data()).filter(i => !i.checked);
+          
+          if (items.length === 0) {
+            parsedResult.assistantReplyText = "🛒 *Sua lista de compras está vazia no momento (ou todos os itens já estão no carrinho)!*";
+          } else {
+            let reply = "🛒 *Sua Lista de Compras (Faltando):*\n";
+            const byCat: Record<string, any[]> = {};
+            let totalEstimado = 0;
+            items.forEach(i => {
+              if (!byCat[i.category]) byCat[i.category] = [];
+              byCat[i.category].push(i);
+            });
+            for (const cat in byCat) {
+              reply += `\n*${cat}*\n`;
+              byCat[cat].forEach(i => {
+                const itemTotal = (i.price || 0) * (i.quantity || 1);
+                totalEstimado += itemTotal;
+                if (i.price && i.price > 0) {
+                  reply += `• ${i.name} (${i.quantity}x) - R$ ${i.price.toFixed(2).replace('.', ',')}\n`;
+                } else {
+                  reply += `• ${i.name} (${i.quantity})\n`;
+                }
+              });
+            }
+            if (totalEstimado > 0) {
+               reply += `\n*Total Estimado: R$ ${totalEstimado.toFixed(2).replace('.', ',')}*\n`;
+            }
+            parsedResult.assistantReplyText = reply;
+          }
+        } else if ((parsedResult.intent === 'shopping' || parsedResult.intent === 'shopping_receipt') && parsedResult.shoppingItems && parsedResult.shoppingItems.length > 0) {
           console.log(`[Assistant Bot] Salvando ${parsedResult.shoppingItems.length} compras no Firestore...`);
+          const isReceipt = parsedResult.intent === 'shopping_receipt';
+          const receiptId = isReceipt ? `receipt-${Date.now()}` : null;
+          
           for (const item of parsedResult.shoppingItems) {
             const itemId = `shop-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
             
@@ -338,7 +415,10 @@ async function startServer() {
               name: String(item.name || 'Sem nome').substring(0, 100),
               quantity: q,
               category: String(cat).substring(0, 50),
-              checked: false,
+              price: item.price ? Number(String(item.price).replace(',', '.')) : 0,
+              checked: isReceipt,
+              source: isReceipt ? 'receipt' : 'manual',
+              receiptId: receiptId || null,
               date: new Date().toISOString().split('T')[0],
               concluded: false
             };
@@ -432,7 +512,17 @@ async function startServer() {
           
           let remoteJid = msg?.key?.remoteJid || data?.key?.remoteJid;
           
-          if (remoteJid !== '120363428218497591@g.us') {
+          if (!remoteJid) {
+            continue;
+          }
+
+          // Permite comandos de qualquer grupo/chat para o usuário poder testar livremente
+          if (remoteJid.endsWith('@g.us')) {
+            console.log(`[Webhook] Mensagem de grupo detectada: ${remoteJid}`);
+          }
+
+          if (msg?.key?.fromMe || data?.key?.fromMe) {
+            console.log('[Webhook] Mensagem enviada pelo próprio número do bot. Ignorando.');
             continue;
           }
 
@@ -467,8 +557,18 @@ async function startServer() {
 
           // Envia para o pipeline da IA que analisa e salva no Firestore
           try {
-            await handleChatLogic({ text: messageContent, fileData: base64Raw, mimeType: mimeType }, db);
+            const botResult = await handleChatLogic({ text: messageContent, fileData: base64Raw, mimeType: mimeType }, db);
             console.log(`[Webhook] handleChatLogic finalizado com sucesso para: "${messageContent}"`);
+            
+            const reply = botResult?.assistantReplyText || '';
+            const instanceId = payload?.instance || 'AppCasa';
+            
+            if (reply && !reply.includes('[Ignorado]') && botResult?.intent !== 'fallback') {
+              console.log(`[Webhook] Enviando resposta para Whatsapp via Evolution...`);
+              await sendWhatsAppMessage(instanceId, remoteJid, reply);
+            } else {
+              console.log(`[Webhook] Resposta ignorada de propósito (Fallback/Conversa).`);
+            }
           } catch (logicErr: any) {
             console.error(`[Webhook Erro Analítico] Falha ao processar a IA:`, logicErr?.message || logicErr);
           }

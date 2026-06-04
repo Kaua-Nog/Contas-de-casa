@@ -45,6 +45,10 @@ const DashboardOverview = React.memo(function DashboardOverview({ bills, shoppin
     checkedCount: shoppingCheckedCount 
   } = useShoppingStats(currentMonthPurchasedItems);
 
+  const totalShoppingMarketSpent = useMemo(() => {
+    return currentMonthPurchasedItems.reduce((acc, item) => acc + (item.price || 0), 0);
+  }, [currentMonthPurchasedItems]);
+
   return (
     <div className={`grid grid-cols-1 ${type === 'all' ? 'md:grid-cols-12 gap-6' : 'gap-0'}`} id="dashboard-overview-area">
       {/* 1. Market Shopping Card */}
@@ -68,9 +72,15 @@ const DashboardOverview = React.memo(function DashboardOverview({ bills, shoppin
             </div>
           </div>
 
-          <div className="mt-5 border-t border-[var(--border-card)] pt-3 flex items-center justify-between">
-            <span className="text-xs font-bold text-[var(--text-sub)]">Atendidos/Comprados este mês:</span>
-            <span className="text-sm font-extrabold font-mono text-indigo-400">{shoppingCheckedCount} de {shoppingItemsCount}</span>
+          <div className="mt-5 space-y-2 border-t border-[var(--border-card)] pt-3">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold text-[var(--text-sub)]">Atendidos/Comprados este mês:</span>
+              <span className="text-sm font-extrabold font-mono text-indigo-400">{shoppingCheckedCount} de {shoppingItemsCount}</span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold text-[var(--text-sub)]">Gasto computado no mês:</span>
+              <span className="text-sm font-extrabold font-mono text-emerald-500">R$ {totalShoppingMarketSpent.toFixed(2).replace('.', ',')}</span>
+            </div>
           </div>
         </div>
       )}
